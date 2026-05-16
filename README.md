@@ -7,9 +7,13 @@ It does not need a backend, manual database, Java, Node, or API key.
 
 - The user types a song or artist.
 - The site calls `https://itunes.apple.com/search` without an API key.
-- The reference track is chosen from the best results.
+- The reference track is chosen from repeated iTunes result relevance, exact-title
+  matching, preview availability, and penalties for covers/karaoke/tribute/remix
+  versions.
 - The app searches candidates by genre and vibe hints.
-- Recommendations are ranked by detected vibe, nearby sound, pacing, and texture.
+- Recommendations are ranked by audio-preview similarity when iTunes provides a
+  preview, using energy, brightness, pulse, dynamics, warmth, nearby sound,
+  pacing, and texture.
 - The final list is diversified so the results do not all repeat the same artist
   or the exact same vibe profile.
 - The browser keeps a local cache for 24 hours to avoid repeated calls.
@@ -38,7 +42,12 @@ http://localhost:8080
 ## Important note
 
 The iTunes API does not provide real audio analysis such as BPM, energy, or valence.
-That is why this project uses public iTunes metadata, genres, duration, and a
-vibe-matching heuristic. Lyrics are not used as a matching criterion.
+That is why this project analyzes the public iTunes preview clips when possible
+and falls back to iTunes metadata, genres, duration, and a vibe-matching
+heuristic. Lyrics are not used as a matching criterion.
+
+iTunes Search does not provide play counts, so "most listened" is approximated
+with search relevance, repeated appearances across searches, exact-title matching,
+and known global artist tie-breakers.
 For even more accurate music recommendations, the next step would be combining this
 app with an API that has audio attributes or a backend that stores user feedback.

@@ -98,6 +98,26 @@ const textureAnalysis = {
   rhythmic: "The style is driven by groove and movement.",
 };
 
+const globalArtistBoosts = new Map([
+  ["michael jackson", 90],
+  ["the beatles", 85],
+  ["queen", 82],
+  ["madonna", 78],
+  ["prince", 76],
+  ["beyonce", 76],
+  ["taylor swift", 76],
+  ["rihanna", 74],
+  ["drake", 74],
+  ["the weeknd", 74],
+  ["billie eilish", 72],
+  ["bruno mars", 72],
+  ["adele", 72],
+  ["nirvana", 72],
+  ["radiohead", 70],
+  ["coldplay", 70],
+  ["lady gaga", 70],
+]);
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const term = queryInput.value.trim();
@@ -156,11 +176,11 @@ async function findSeedTrack(term, country) {
     country === "US" ? Promise.resolve([]) : searchItunes({ term, country: "US", limit: 25 }),
   ]);
 
-  const combined = annotateSearchRank([
-    ...defaultResults,
-    ...songResults,
-    ...usResults,
-    ...artistResults,
+  const combined = mergeSearchResults([
+    { results: defaultResults, weight: 130 },
+    { results: songResults, weight: 120 },
+    { results: usResults, weight: 115 },
+    { results: artistResults, weight: 55 },
   ]).filter(isSong);
 
   return dedupeTracks(combined).sort((a, b) => seedScore(term, b) - seedScore(term, a))[0];
@@ -267,8 +287,10 @@ async function rankTracks(seed, tracks, mood) {
       audioFeatures: await analyzeTrackAudio(track),
     }));
 
+  const needsAudioMatch = Boolean(seed.audioFeatures);
   const ranked = analyzedTracks
     .filter((track) => track.trackId !== seed.trackId)
+    .filter((track) => !needsAudioMatch || track.audioFeatures)
     .map((track) => {
       const reasons = [];
       let score = 0;
@@ -322,7 +344,7 @@ async function rankTracks(seed, tracks, mood) {
         analysis: vibeAnalysis(track, seed, profile, audioSimilarity),
       };
     })
-    .filter((track) => track.score >= 48)
+    .filter((track) => track.score >= (needsAudioMatch ? 62 : 48))
     .sort((a, b) => b.score - a.score);
 
   return diversifyTracks(ranked, 12);
@@ -339,7 +361,7 @@ function diversifyTracks(tracks, limit) {
     const profileUses = profileCount.get(profileKey) || 0;
     const artistUses = artistCount.get(artistKey) || 0;
 
-    if (profileUses >= 2 || artistUses >= 2) {
+    if (profileUses >= 1 || artistUses >= 1) {
       continue;
     }
 
@@ -349,16 +371,6 @@ function diversifyTracks(tracks, limit) {
 
     if (selected.length === limit) {
       return selected;
-    }
-  }
-
-  for (const track of tracks) {
-    if (!selected.some((item) => item.trackId === track.trackId)) {
-      selected.push(track);
-    }
-
-    if (selected.length === limit) {
-      break;
     }
   }
 
@@ -587,6 +599,11 @@ function seedScore(term, track) {
   if (track.previewUrl) score += 25;
   if (track.artworkUrl100) score += 10;
   score += searchRank;
+  score += track.popularityProxy || 0;
+
+  if (normalizedTitle === normalizedTerm) {
+    score += globalArtistBoosts.get(normalizedArtist) || 0;
+  }
 
   const queryAsksForVariant = /live|remix|karaoke|cover|tribute|instrumental|sped|slowed/.test(
     normalizedTerm,
@@ -598,11 +615,34 @@ function seedScore(term, track) {
   return score;
 }
 
-function annotateSearchRank(tracks) {
-  return tracks.map((track, index) => ({
-    ...track,
-    searchRank: Math.max(0, 90 - index),
-  }));
+function mergeSearchResults(groups) {
+  const byKey = new Map();
+
+  for (const group of groups) {
+    group.results.forEach((track, index) => {
+      if (!isSong(track)) return;
+
+      const key = track.trackId || `${normalize(track.artistName)}-${normalize(track.trackName)}`;
+      const relevance = Math.max(0, group.weight - index * 2);
+      const current = byKey.get(key);
+
+      if (!current) {
+        byKey.set(key, {
+          ...track,
+          searchRank: relevance,
+          popularityProxy: relevance,
+          sourceHits: 1,
+        });
+        return;
+      }
+
+      current.searchRank = Math.max(current.searchRank || 0, relevance);
+      current.popularityProxy = (current.popularityProxy || 0) + relevance;
+      current.sourceHits = (current.sourceHits || 1) + 1;
+    });
+  }
+
+  return [...byKey.values()];
 }
 
 function tokens(value) {
