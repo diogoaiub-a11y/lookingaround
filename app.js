@@ -110,7 +110,7 @@ form.addEventListener("submit", async (event) => {
     );
   } catch (error) {
     console.error(error);
-    setStatus("I could not reach iTunes right now. Check your connection and try again.");
+    setStatus(`Search failed: ${error.message}`);
   } finally {
     setLoading(false);
   }
@@ -166,14 +166,23 @@ async function searchItunes({ term, country, attribute, limit }) {
 }
 
 async function fetchItunes(query) {
+  const proxyUrl = `${PROXY_API_URL}?${query}`;
+
   try {
-    const response = await fetch(`${PROXY_API_URL}?${query}`);
-    if (!response.ok) throw new Error(`Proxy responded ${response.status}`);
+    const response = await fetch(proxyUrl);
+    if (!response.ok) {
+      throw new Error(`/api/itunes returned ${response.status}`);
+    }
+
     const data = await response.json();
     if (data.error) throw new Error(data.error);
     return data;
   } catch (error) {
-    return jsonp(`${API_URL}?${query}`);
+    if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+      return jsonp(`${API_URL}?${query}`);
+    }
+
+    throw error;
   }
 }
 

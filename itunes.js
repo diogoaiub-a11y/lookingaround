@@ -1,4 +1,4 @@
-export default async function handler(request, response) {
+module.exports = async function handler(request, response) {
   const params = new URLSearchParams(request.query);
   params.delete("callback");
 
@@ -32,4 +32,4 @@ export default async function handler(request, response) {
       error: error.message || "Could not reach iTunes",
     });
   }
-}
+};
