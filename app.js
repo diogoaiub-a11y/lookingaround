@@ -158,12 +158,42 @@ async function searchItunes({ term, country, attribute, limit }) {
   const cached = readCache(url);
   if (cached) return cached;
 
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`iTunes respondeu ${response.status}`);
-
-  const data = await response.json();
+  const data = await jsonp(url);
   writeCache(url, data.results || []);
   return data.results || [];
+}
+
+function jsonp(url) {
+  return new Promise((resolve, reject) => {
+    const callbackName = `vibingEchoCallback_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2)}`;
+    const script = document.createElement("script");
+    const separator = url.includes("?") ? "&" : "?";
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("iTunes request timed out"));
+    }, 12000);
+
+    window[callbackName] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+
+    script.src = `${url}${separator}callback=${callbackName}`;
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("iTunes request failed"));
+    };
+
+    document.body.appendChild(script);
+
+    function cleanup() {
+      window.clearTimeout(timeout);
+      delete window[callbackName];
+      script.remove();
+    }
+  });
 }
 
 function rankTracks(seed, tracks, mood) {
