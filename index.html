@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VibingEcho</title>
+    <link rel="preconnect" href="https://itunes.apple.com" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">VibingEcho</p>
+          <h1>Musicas com a mesma vibe.</h1>
+          <p>
+            Digite um artista ou musica e receba opcoes parecidas, puxadas
+            automaticamente do catalogo publico do iTunes.
+          </p>
+        </div>
+
+        <form class="search-panel" id="recommendation-form">
+          <label for="music-query">Artista ou musica</label>
+          <div class="search-row">
+            <input
+              id="music-query"
+              name="query"
+              type="search"
+              autocomplete="off"
+              placeholder="Ex: The Weeknd, Billie Eilish, Sweater Weather"
+              required
+            />
+            <button type="submit">Recomendar</button>
+          </div>
+
+          <div class="controls">
+            <label>
+              Pais da loja
+              <select id="country">
+                <option value="BR" selected>Brasil</option>
+                <option value="US">Estados Unidos</option>
+                <option value="PT">Portugal</option>
+                <option value="GB">Reino Unido</option>
+                <option value="ES">Espanha</option>
+              </select>
+            </label>
+
+            <label>
+              Sensacao
+              <select id="mood">
+                <option value="auto" selected>Detectar automaticamente</option>
+                <option value="melancholic">Melancolica</option>
+                <option value="romantic">Romantica</option>
+                <option value="energetic">Energica</option>
+                <option value="calm">Calma</option>
+                <option value="dark">Sombria</option>
+                <option value="bright">Leve</option>
+              </select>
+            </label>
+
+            <label class="toggle">
+              <input id="prefer-new-artists" type="checkbox" checked />
+              <span>Priorizar artistas diferentes</span>
+            </label>
+          </div>
+        </form>
+      </section>
+
+      <section class="status-area" aria-live="polite">
+          <p id="status-text">Pronto para encontrar uma vibe.</p>
+      </section>
+
+      <section class="seed-section" id="seed-section" hidden>
+        <h2>Referencia encontrada</h2>
+        <div id="seed-card" class="seed-card"></div>
+      </section>
+
+      <section class="results-section">
+        <div class="section-heading">
+          <h2>Recomendacoes</h2>
+          <button id="clear-cache" type="button" title="Limpar cache local">
+            Limpar cache
+          </button>
+        </div>
+        <div id="results" class="results-grid"></div>
+      </section>
+    </main>
+
+    <template id="track-card-template">
+      <article class="track-card">
+        <img class="cover" alt="" />
+        <div class="track-info">
+          <div class="match-row">
+            <span class="match-score"></span>
+            <span class="mood-tag"></span>
+          </div>
+          <h3></h3>
+          <p class="artist"></p>
+          <p class="why"></p>
+          <div class="actions">
+            <audio controls preload="none"></audio>
+            <a target="_blank" rel="noreferrer">Abrir no iTunes</a>
+          </div>
+          <small>Previa fornecida cortesia do iTunes.</small>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

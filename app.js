@@ -1,0 +1,393 @@
+const form = document.querySelector("#recommendation-form");
+const queryInput = document.querySelector("#music-query");
+const countryInput = document.querySelector("#country");
+const moodInput = document.querySelector("#mood");
+const preferNewArtistsInput = document.querySelector("#prefer-new-artists");
+const statusText = document.querySelector("#status-text");
+const seedSection = document.querySelector("#seed-section");
+const seedCard = document.querySelector("#seed-card");
+const results = document.querySelector("#results");
+const clearCacheButton = document.querySelector("#clear-cache");
+const template = document.querySelector("#track-card-template");
+
+const API_URL = "https://itunes.apple.com/search";
+const CACHE_KEY = "eco-musical-cache-v1";
+const CACHE_TTL = 1000 * 60 * 60 * 24;
+
+const moodLabels = {
+  melancholic: "melancolica",
+  romantic: "romantica",
+  energetic: "energica",
+  calm: "calma",
+  dark: "sombria",
+  bright: "leve",
+};
+
+const moodLexicon = {
+  melancholic: [
+    "sad",
+    "blue",
+    "lost",
+    "alone",
+    "cry",
+    "tears",
+    "rain",
+    "night",
+    "saudade",
+    "triste",
+    "dor",
+  ],
+  romantic: [
+    "love",
+    "heart",
+    "kiss",
+    "baby",
+    "amor",
+    "paixao",
+    "voce",
+    "you",
+    "lover",
+  ],
+  energetic: [
+    "dance",
+    "party",
+    "fire",
+    "run",
+    "jump",
+    "hot",
+    "club",
+    "funk",
+    "beat",
+  ],
+  calm: ["acoustic", "sleep", "dream", "soft", "quiet", "slow", "piano", "calm"],
+  dark: ["dark", "black", "devil", "ghost", "bad", "blood", "grave", "shadow"],
+  bright: ["sun", "summer", "happy", "gold", "light", "good", "sweet", "dia"],
+};
+
+const genreMoodHints = {
+  melancholic: ["alternative", "indie", "blues", "folk", "emo", "singer/songwriter"],
+  romantic: ["r&b", "soul", "latin", "mpb", "bossa nova"],
+  energetic: ["pop", "dance", "electronic", "funk", "hip-hop", "rap", "rock"],
+  calm: ["acoustic", "classical", "jazz", "ambient", "new age"],
+  dark: ["metal", "industrial", "punk", "hard rock", "trap"],
+  bright: ["reggae", "ska", "disco", "k-pop", "j-pop"],
+};
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const term = queryInput.value.trim();
+
+  if (!term) return;
+
+  setLoading(true, "Buscando no catalogo do iTunes...");
+  seedSection.hidden = true;
+  results.innerHTML = "";
+
+  try {
+    const country = countryInput.value;
+    const preferNewArtists = preferNewArtistsInput.checked;
+    const seed = await findSeedTrack(term, country);
+
+    if (!seed) {
+      setStatus("Nao encontrei nenhuma musica para esse termo. Tente outro artista ou faixa.");
+      return;
+    }
+
+    renderSeed(seed);
+    setStatus("Montando candidatos e calculando sensacao parecida...");
+
+    const selectedMood = moodInput.value === "auto" ? inferMood(seed) : moodInput.value;
+    const candidates = await collectCandidates(seed, country, selectedMood);
+    const recommendations = rankTracks(seed, candidates, selectedMood, preferNewArtists).slice(0, 12);
+
+    if (!recommendations.length) {
+      setStatus("Encontrei a referencia, mas nao achei recomendacoes boas o suficiente.");
+      return;
+    }
+
+    renderResults(recommendations, selectedMood);
+    setStatus(
+      `Usei ${candidates.length} faixas do iTunes e selecionei ${recommendations.length} com sensacao ${moodLabels[selectedMood]}.`,
+    );
+  } catch (error) {
+    console.error(error);
+    setStatus("Nao consegui consultar o iTunes agora. Verifique a conexao e tente de novo.");
+  } finally {
+    setLoading(false);
+  }
+});
+
+clearCacheButton.addEventListener("click", () => {
+  localStorage.removeItem(CACHE_KEY);
+  setStatus("Cache local limpo. As proximas buscas vao consultar o iTunes de novo.");
+});
+
+async function findSeedTrack(term, country) {
+  const [artistResults, songResults] = await Promise.all([
+    searchItunes({ term, country, attribute: "artistTerm", limit: 25 }),
+    searchItunes({ term, country, attribute: "songTerm", limit: 25 }),
+  ]);
+
+  const combined = [...artistResults, ...songResults].filter(isSong);
+  return dedupeTracks(combined).sort((a, b) => seedScore(term, b) - seedScore(term, a))[0];
+}
+
+async function collectCandidates(seed, country, mood) {
+  const terms = [
+    seed.artistName,
+    seed.primaryGenreName,
+    seed.collectionName,
+    ...genreMoodHints[mood].slice(0, 3),
+  ].filter(Boolean);
+
+  const batches = await Promise.all(
+    terms.map((term) => searchItunes({ term, country, attribute: "mixTerm", limit: 50 })),
+  );
+
+  return dedupeTracks(batches.flat().filter(isSong));
+}
+
+async function searchItunes({ term, country, attribute, limit }) {
+  const params = new URLSearchParams({
+    term,
+    country,
+    media: "music",
+    entity: "song",
+    limit: String(limit),
+  });
+
+  if (attribute) params.set("attribute", attribute);
+
+  const url = `${API_URL}?${params.toString()}`;
+  const cached = readCache(url);
+  if (cached) return cached;
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`iTunes respondeu ${response.status}`);
+
+  const data = await response.json();
+  writeCache(url, data.results || []);
+  return data.results || [];
+}
+
+function rankTracks(seed, tracks, mood, preferNewArtists) {
+  return tracks
+    .filter((track) => track.trackId !== seed.trackId)
+    .map((track) => {
+      const reasons = [];
+      let score = 0;
+
+      if (same(seed.primaryGenreName, track.primaryGenreName)) {
+        score += 34;
+        reasons.push(`mesmo genero: ${track.primaryGenreName}`);
+      }
+
+      const moodMatch = inferMood(track) === mood;
+      if (moodMatch) {
+        score += 26;
+        reasons.push(`sensacao ${moodLabels[mood]}`);
+      }
+
+      if (same(seed.artistName, track.artistName)) {
+        score += preferNewArtists ? 2 : 16;
+        reasons.push("mesmo artista");
+      } else if (preferNewArtists) {
+        score += 10;
+        reasons.push("artista diferente");
+      }
+
+      if (same(seed.collectionName, track.collectionName)) {
+        score += 8;
+        reasons.push("mesmo album");
+      }
+
+      const durationDiff = Math.abs((seed.trackTimeMillis || 0) - (track.trackTimeMillis || 0));
+      if (durationDiff && durationDiff < 45000) {
+        score += 8;
+        reasons.push("duracao parecida");
+      }
+
+      const yearDiff = Math.abs(year(seed.releaseDate) - year(track.releaseDate));
+      if (!Number.isNaN(yearDiff) && yearDiff <= 4) {
+        score += 6;
+        reasons.push("epoca parecida");
+      }
+
+      const overlap = keywordOverlap(seed, track);
+      score += Math.min(overlap * 4, 16);
+      if (overlap > 0) reasons.push("palavras em comum");
+
+      return {
+        ...track,
+        score,
+        reasons: reasons.slice(0, 3),
+        mood: inferMood(track),
+      };
+    })
+    .filter((track) => track.score >= 24)
+    .sort((a, b) => b.score - a.score);
+}
+
+function inferMood(track) {
+  const haystack = normalize(
+    `${track.trackName} ${track.collectionName} ${track.artistName} ${track.primaryGenreName}`,
+  );
+
+  const scores = Object.fromEntries(Object.keys(moodLexicon).map((mood) => [mood, 0]));
+
+  for (const [mood, words] of Object.entries(moodLexicon)) {
+    for (const word of words) {
+      if (haystack.includes(word)) scores[mood] += 2;
+    }
+  }
+
+  const genre = normalize(track.primaryGenreName || "");
+  for (const [mood, hints] of Object.entries(genreMoodHints)) {
+    for (const hint of hints) {
+      if (genre.includes(normalize(hint))) scores[mood] += 3;
+    }
+  }
+
+  return Object.entries(scores).sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function renderSeed(track) {
+  seedSection.hidden = false;
+  seedCard.innerHTML = `
+    <img class="cover" src="${artwork(track, 300)}" alt="Capa de ${escapeHtml(track.trackName)}" />
+    <div class="track-info">
+      <div class="match-row">
+        <span class="mood-tag">${moodLabels[inferMood(track)]}</span>
+      </div>
+      <h3>${escapeHtml(track.trackName)}</h3>
+      <p class="artist">${escapeHtml(track.artistName)} - ${escapeHtml(track.primaryGenreName || "Genero desconhecido")}</p>
+      <p class="why">${escapeHtml(track.collectionName || "Album nao informado")} ${year(track.releaseDate) || ""}</p>
+      <div class="actions">
+        ${track.previewUrl ? `<audio controls preload="none" src="${track.previewUrl}"></audio>` : ""}
+        <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">Abrir no iTunes</a>
+      </div>
+      <small>Previa fornecida cortesia do iTunes.</small>
+    </div>
+  `;
+}
+
+function renderResults(tracks) {
+  results.innerHTML = "";
+
+  for (const track of tracks) {
+    const node = template.content.cloneNode(true);
+    node.querySelector(".cover").src = artwork(track, 300);
+    node.querySelector(".cover").alt = `Capa de ${track.trackName}`;
+    node.querySelector(".match-score").textContent = `${Math.round(track.score)}% match`;
+    node.querySelector(".mood-tag").textContent = moodLabels[track.mood];
+    node.querySelector("h3").textContent = track.trackName;
+    node.querySelector(".artist").textContent = `${track.artistName} - ${track.primaryGenreName || "Genero desconhecido"}`;
+    node.querySelector(".why").textContent = track.reasons.length
+      ? `Porque combina: ${track.reasons.join(", ")}.`
+      : "Porque tem elementos musicais proximos da referencia.";
+
+    const audio = node.querySelector("audio");
+    if (track.previewUrl) {
+      audio.src = track.previewUrl;
+    } else {
+      audio.remove();
+    }
+
+    const link = node.querySelector("a");
+    link.href = track.trackViewUrl;
+    link.textContent = "Abrir no iTunes";
+
+    results.appendChild(node);
+  }
+}
+
+function seedScore(term, track) {
+  const normalizedTerm = normalize(term);
+  let score = 0;
+  if (normalize(track.artistName).includes(normalizedTerm)) score += 40;
+  if (normalize(track.trackName).includes(normalizedTerm)) score += 40;
+  if (normalize(track.collectionName).includes(normalizedTerm)) score += 10;
+  if (track.previewUrl) score += 4;
+  if (track.artworkUrl100) score += 3;
+  return score;
+}
+
+function keywordOverlap(a, b) {
+  const left = new Set(tokens(`${a.trackName} ${a.collectionName} ${a.artistName}`));
+  return tokens(`${b.trackName} ${b.collectionName} ${b.artistName}`).filter((word) =>
+    left.has(word),
+  ).length;
+}
+
+function tokens(value) {
+  return normalize(value)
+    .split(" ")
+    .filter((word) => word.length > 3);
+}
+
+function dedupeTracks(tracks) {
+  const seen = new Set();
+  return tracks.filter((track) => {
+    const key = track.trackId || `${track.artistName}-${track.trackName}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isSong(item) {
+  return item && item.wrapperType === "track" && item.kind === "song" && item.trackName;
+}
+
+function same(a, b) {
+  return normalize(a) === normalize(b);
+}
+
+function year(date) {
+  return new Date(date).getFullYear();
+}
+
+function artwork(track, size) {
+  return (track.artworkUrl100 || "").replace("100x100", `${size}x${size}`);
+}
+
+function normalize(value = "") {
+  return String(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9/& ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function readCache(key) {
+  const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
+  const item = cache[key];
+  if (!item || Date.now() - item.createdAt > CACHE_TTL) return null;
+  return item.value;
+}
+
+function writeCache(key, value) {
+  const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
+  cache[key] = { createdAt: Date.now(), value };
+  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+}
+
+function setStatus(message) {
+  statusText.textContent = message;
+}
+
+function setLoading(isLoading, message) {
+  form.querySelector("button").disabled = isLoading;
+  if (message) setStatus(message);
+}
