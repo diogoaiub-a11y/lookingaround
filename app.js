@@ -133,7 +133,6 @@ async function findSeedTrack(term, country) {
 async function collectCandidates(seed, country, mood) {
   const terms = [
     seed.primaryGenreName,
-    ...lyricalKeywords(seed).slice(0, 4),
     ...genreMoodHints[mood].slice(0, 3),
   ].filter(Boolean);
 
@@ -180,26 +179,14 @@ function rankTracks(seed, tracks, mood) {
         reasons.push(`${moodLabels[mood]} vibe`);
       }
 
-      const lyricalOverlap = keywordOverlap(seed, track);
-      if (lyricalOverlap > 0) {
-        score += Math.min(lyricalOverlap * 14, 42);
-        reasons.push("similar lyrical themes");
-      }
-
-      const moodWordOverlap = sharedMoodWords(seed, track);
-      if (moodWordOverlap > 0) {
-        score += Math.min(moodWordOverlap * 12, 30);
-        reasons.push("shared mood words");
-      }
-
       const durationDiff = Math.abs((seed.trackTimeMillis || 0) - (track.trackTimeMillis || 0));
       if (durationDiff && durationDiff < 45000) {
-        score += 6;
+        score += 18;
         reasons.push("similar pacing");
       }
 
       if (same(seed.primaryGenreName, track.primaryGenreName)) {
-        score += 10;
+        score += 28;
         reasons.push(`nearby sound: ${track.primaryGenreName}`);
       }
 
@@ -210,7 +197,7 @@ function rankTracks(seed, tracks, mood) {
         mood: inferMood(track),
       };
     })
-    .filter((track) => track.score >= 26)
+    .filter((track) => track.score >= 28)
     .sort((a, b) => b.score - a.score);
 }
 
@@ -296,44 +283,6 @@ function seedScore(term, track) {
   if (track.previewUrl) score += 4;
   if (track.artworkUrl100) score += 3;
   return score;
-}
-
-function keywordOverlap(a, b) {
-  const left = new Set(lyricalKeywords(a));
-  return lyricalKeywords(b).filter((word) => left.has(word)).length;
-}
-
-function sharedMoodWords(a, b) {
-  const leftText = normalize(`${a.trackName} ${a.collectionName} ${a.primaryGenreName}`);
-  const rightText = normalize(`${b.trackName} ${b.collectionName} ${b.primaryGenreName}`);
-  let total = 0;
-
-  for (const words of Object.values(moodLexicon)) {
-    for (const word of words) {
-      if (leftText.includes(word) && rightText.includes(word)) {
-        total++;
-      }
-    }
-  }
-
-  return total;
-}
-
-function lyricalKeywords(track) {
-  const words = tokens(`${track.trackName} ${track.collectionName} ${track.primaryGenreName}`);
-  const blocked = new Set([
-    "feat",
-    "featuring",
-    "version",
-    "remix",
-    "edit",
-    "explicit",
-    "single",
-    "album",
-    "deluxe",
-  ]);
-
-  return words.filter((word) => !blocked.has(word));
 }
 
 function tokens(value) {
