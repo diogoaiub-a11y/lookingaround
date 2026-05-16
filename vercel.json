@@ -1,9 +1,3 @@
 {
-  "cleanUrls": true,
-  "rewrites": [
-    {
-      "source": "/api/itunes",
-      "destination": "https://itunes.apple.com/search"
-    }
-  ]
+  "cleanUrls": true
 }

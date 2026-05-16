@@ -169,7 +169,9 @@ async function fetchItunes(query) {
   try {
     const response = await fetch(`${PROXY_API_URL}?${query}`);
     if (!response.ok) throw new Error(`Proxy responded ${response.status}`);
-    return await response.json();
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    return data;
   } catch (error) {
     return jsonp(`${API_URL}?${query}`);
   }
