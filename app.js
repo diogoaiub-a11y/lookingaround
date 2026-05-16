@@ -9,10 +9,11 @@ const results = document.querySelector("#results");
 const clearCacheButton = document.querySelector("#clear-cache");
 const template = document.querySelector("#track-card-template");
 
+const APP_VERSION = "vibingecho-audio-rank-v5";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v1";
+const CACHE_KEY = "vibingecho-cache-v5";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
 const AUDIO_ANALYSIS_LIMIT = 60;
 
@@ -118,13 +119,26 @@ const globalArtistBoosts = new Map([
   ["lady gaga", 70],
 ]);
 
+const knownOriginals = new Map([
+  ["beat it", "michael jackson"],
+  ["billie jean", "michael jackson"],
+  ["thriller", "michael jackson"],
+  ["bohemian rhapsody", "queen"],
+  ["smells like teen spirit", "nirvana"],
+  ["like a prayer", "madonna"],
+  ["purple rain", "prince"],
+  ["rolling in the deep", "adele"],
+  ["bad romance", "lady gaga"],
+  ["blinding lights", "the weeknd"],
+]);
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const term = queryInput.value.trim();
 
   if (!term) return;
 
-  setLoading(true, "Searching the iTunes catalog...");
+  setLoading(true, `Searching the iTunes catalog... ${APP_VERSION}`);
   seedSection.hidden = true;
   results.innerHTML = "";
 
@@ -137,10 +151,14 @@ form.addEventListener("submit", async (event) => {
       return;
     }
 
-    setStatus("Analyzing the reference preview...");
+    setStatus(`Analyzing the reference preview... ${APP_VERSION}`);
     seed.audioFeatures = await analyzeTrackAudio(seed);
     renderSeed(seed);
-    setStatus("Analyzing candidate previews and matching the closest feel...");
+    if (!seed.audioFeatures) {
+      setStatus("This reference preview could not be analyzed. Recommendations will be weaker.");
+    } else {
+      setStatus("Analyzing candidate previews and matching the closest feel...");
+    }
 
     const selectedMood = moodInput.value === "auto" ? inferMood(seed, seed.audioFeatures) : moodInput.value;
     const candidates = await collectCandidates(seed, country, selectedMood);
@@ -153,7 +171,7 @@ form.addEventListener("submit", async (event) => {
 
     renderResults(recommendations, selectedMood);
     setStatus(
-      `Analyzed ${Math.min(candidates.length, AUDIO_ANALYSIS_LIMIT)} previews and selected ${recommendations.length} close matches.`,
+      `${APP_VERSION}: analyzed ${recommendations.filter((track) => track.audioFeatures).length} usable previews and selected ${recommendations.length} close matches.`,
     );
   } catch (error) {
     console.error(error);
@@ -536,16 +554,18 @@ function inferMood(track, features = null) {
 }
 
 function renderSeed(track) {
+  const profile = vibeProfile(track, track.audioFeatures);
+  const audioStatus = track.audioFeatures ? "audio preview analyzed" : "audio preview not analyzed";
   seedSection.hidden = false;
   seedCard.innerHTML = `
     <img class="cover" src="${artwork(track, 300)}" alt="Capa de ${escapeHtml(track.trackName)}" />
     <div class="track-info">
       <div class="match-row">
-        <span class="mood-tag">${moodLabels[inferMood(track, track.audioFeatures)]}</span>
+        <span class="mood-tag">${moodLabels[profile.mood]} / ${profile.texture} ${profile.pace}</span>
       </div>
       <h3>${escapeHtml(track.trackName)}</h3>
       <p class="artist">${escapeHtml(track.artistName)} - ${escapeHtml(track.primaryGenreName || "Unknown genre")}</p>
-      <p class="why">${escapeHtml(track.collectionName || "Album not available")} ${year(track.releaseDate) || ""}</p>
+      <p class="why">${escapeHtml(track.collectionName || "Album not available")} ${year(track.releaseDate) || ""}. ${audioStatus}. ${APP_VERSION}.</p>
       <div class="actions">
         ${track.previewUrl ? `<audio controls preload="none" src="${track.previewUrl}"></audio>` : ""}
         <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">Open in iTunes</a>
@@ -603,6 +623,11 @@ function seedScore(term, track) {
 
   if (normalizedTitle === normalizedTerm) {
     score += globalArtistBoosts.get(normalizedArtist) || 0;
+  }
+
+  const knownArtist = knownOriginals.get(normalizedTerm);
+  if (knownArtist && normalizedArtist === knownArtist) {
+    score += 260;
   }
 
   const queryAsksForVariant = /live|remix|karaoke|cover|tribute|instrumental|sped|slowed/.test(
