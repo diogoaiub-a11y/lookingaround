@@ -14,7 +14,7 @@ const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
 const CACHE_KEY = "vibingecho-cache-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
-const AUDIO_ANALYSIS_LIMIT = 42;
+const AUDIO_ANALYSIS_LIMIT = 60;
 
 const moodLabels = {
   melancholic: "melancholic",
@@ -167,16 +167,22 @@ async function findSeedTrack(term, country) {
 }
 
 async function collectCandidates(seed, country, mood) {
-  const terms = [
-    seed.primaryGenreName,
-    ...genreMoodHints[mood].slice(0, 3),
-  ].filter(Boolean);
+  const terms = candidateSearchTerms(seed, mood);
 
   const batches = await Promise.all(
-    terms.map((term) => searchItunes({ term, country, attribute: "mixTerm", limit: 50 })),
+    terms.map((term) => searchItunes({ term, country, limit: 45 })),
   );
 
-  return dedupeTracks(batches.flat().filter(isSong));
+  const usBatches =
+    country === "US"
+      ? []
+      : await Promise.all(
+          terms
+            .slice(0, 4)
+            .map((term) => searchItunes({ term, country: "US", limit: 35 })),
+        );
+
+  return prioritizeCandidatePool(seed, dedupeTracks([...batches, ...usBatches].flat().filter(isSong)));
 }
 
 async function searchItunes({ term, country, attribute, limit }) {
@@ -270,35 +276,41 @@ async function rankTracks(seed, tracks, mood) {
       const audioSimilarity = compareAudioFeatures(seed.audioFeatures, track.audioFeatures);
 
       if (audioSimilarity.available) {
-        score += Math.round(audioSimilarity.score * 62);
+        score += Math.round(audioSimilarity.score * 82);
         reasons.push(audioSimilarity.reason);
+      } else if (seed.audioFeatures) {
+        score -= 24;
       }
 
       const moodMatch = inferMood(track, track.audioFeatures) === mood;
       if (moodMatch) {
-        score += audioSimilarity.available ? 18 : 42;
+        score += audioSimilarity.available ? 10 : 30;
         reasons.push(`${moodLabels[mood]} emotional profile`);
       }
 
       const durationDiff = Math.abs((seed.trackTimeMillis || 0) - (track.trackTimeMillis || 0));
       if (durationDiff && durationDiff < 45000) {
-        score += audioSimilarity.available ? 7 : 18;
+        score += audioSimilarity.available ? 5 : 16;
         reasons.push("similar pacing");
       }
 
       if (profile.pace === seedProfile.pace) {
-        score += 10;
+        score += 6;
         reasons.push(`${profile.pace} pace`);
       }
 
       if (profile.texture === seedProfile.texture) {
-        score += 10;
+        score += 6;
         reasons.push(`${profile.texture} texture`);
       }
 
       if (same(seed.primaryGenreName, track.primaryGenreName)) {
-        score += audioSimilarity.available ? 8 : 28;
+        score += audioSimilarity.available ? 5 : 24;
         reasons.push(`nearby sound: ${track.primaryGenreName}`);
+      }
+
+      if (same(seed.artistName, track.artistName)) {
+        score += 4;
       }
 
       return {
@@ -310,7 +322,7 @@ async function rankTracks(seed, tracks, mood) {
         analysis: vibeAnalysis(track, seed, profile, audioSimilarity),
       };
     })
-    .filter((track) => track.score >= 34)
+    .filter((track) => track.score >= 48)
     .sort((a, b) => b.score - a.score);
 
   return diversifyTracks(ranked, 12);
@@ -351,6 +363,72 @@ function diversifyTracks(tracks, limit) {
   }
 
   return selected;
+}
+
+function candidateSearchTerms(seed, mood) {
+  const genre = seed.primaryGenreName || "";
+  const normalizedGenre = normalize(genre);
+  const terms = [
+    seed.artistName,
+    genre,
+    ...genreFamily(normalizedGenre),
+    ...genreMoodHints[mood].slice(0, 2),
+  ];
+
+  return [...new Set(terms.filter(Boolean).map((term) => term.trim()).filter(Boolean))].slice(0, 8);
+}
+
+function genreFamily(genre) {
+  if (genre.includes("pop")) {
+    return ["pop", "dance pop", "funk", "r&b", "rock"];
+  }
+  if (genre.includes("rock")) {
+    return ["rock", "pop rock", "alternative", "funk rock", "new wave"];
+  }
+  if (genre.includes("r&b") || genre.includes("soul")) {
+    return ["r&b", "soul", "funk", "pop", "quiet storm"];
+  }
+  if (genre.includes("hip-hop") || genre.includes("rap")) {
+    return ["hip-hop", "rap", "trap", "r&b", "pop rap"];
+  }
+  if (genre.includes("dance") || genre.includes("electronic")) {
+    return ["dance", "electronic", "house", "pop", "club"];
+  }
+  if (genre.includes("alternative") || genre.includes("indie")) {
+    return ["alternative", "indie", "rock", "dream pop", "singer/songwriter"];
+  }
+  if (genre.includes("latin")) {
+    return ["latin", "reggaeton", "latin pop", "bachata", "urbano latino"];
+  }
+  return [genre];
+}
+
+function prioritizeCandidatePool(seed, tracks) {
+  const seedGenre = normalize(seed.primaryGenreName);
+  const seedArtist = normalize(seed.artistName);
+
+  return tracks
+    .map((track, index) => {
+      let priority = Math.max(0, 120 - index);
+      const genre = normalize(track.primaryGenreName);
+      const artist = normalize(track.artistName);
+
+      if (track.previewUrl) priority += 80;
+      if (genre === seedGenre) priority += 35;
+      if (genreFamily(seedGenre).some((term) => genre.includes(normalize(term)))) priority += 20;
+      if (artist === seedArtist) priority += 12;
+      if (isLowQualityVariant(track)) priority -= 140;
+
+      return { ...track, candidatePriority: priority };
+    })
+    .sort((a, b) => b.candidatePriority - a.candidatePriority);
+}
+
+function isLowQualityVariant(track) {
+  const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
+  return /karaoke|tribute|cover|instrumental|lullaby|remix|sped up|slowed|made famous by/.test(
+    text,
+  );
 }
 
 function vibeProfile(track, features = null) {
@@ -407,7 +485,7 @@ function vibeAnalysis(track, seed, profile, audioSimilarity) {
       : `It adds a ${currentMood} shade around the reference's ${seedMood} center.`;
 
   const audioLine = audioSimilarity.available
-    ? `The preview is close in ${audioSimilarity.reason}, so the match is based on the sound itself.`
+    ? `The preview analysis puts it close to the reference in ${audioSimilarity.reason.replace("similar ", "")}, so this is based on the audio preview rather than just catalog tags.`
     : "The preview could not be analyzed, so this match uses catalog signals only.";
 
   return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} In context, ${genre} keeps it distinct instead of just repeating the same match. ${contrast}`;
@@ -513,13 +591,7 @@ function seedScore(term, track) {
   const queryAsksForVariant = /live|remix|karaoke|cover|tribute|instrumental|sped|slowed/.test(
     normalizedTerm,
   );
-  const variantText = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
-  if (
-    !queryAsksForVariant &&
-    /karaoke|tribute|cover|instrumental|lullaby|remix|sped up|slowed|made famous by/.test(
-      variantText,
-    )
-  ) {
+  if (!queryAsksForVariant && isLowQualityVariant(track)) {
     score -= 220;
   }
 
@@ -700,11 +772,11 @@ function compareAudioFeatures(seedFeatures, trackFeatures) {
   }
 
   const weights = {
-    energy: 0.28,
-    brightness: 0.22,
-    pulse: 0.26,
+    energy: 0.3,
+    brightness: 0.24,
+    pulse: 0.28,
     dynamics: 0.14,
-    warmth: 0.1,
+    warmth: 0.04,
   };
   let distance = 0;
 
@@ -728,7 +800,7 @@ function compareAudioFeatures(seedFeatures, trackFeatures) {
 
   return {
     available: true,
-    score: clamp(1 - distance, 0, 1),
+    score: clamp(1 - distance * 1.35, 0, 1),
     reason: `similar ${labels[closest]}`,
   };
 }
