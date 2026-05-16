@@ -390,16 +390,25 @@ function escapeHtml(value = "") {
 }
 
 function readCache(key) {
-  const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
-  const item = cache[key];
-  if (!item || Date.now() - item.createdAt > CACHE_TTL) return null;
-  return item.value;
+  try {
+    const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
+    const item = cache[key];
+    if (!item || Date.now() - item.createdAt > CACHE_TTL) return null;
+    return item.value;
+  } catch (error) {
+    localStorage.removeItem(CACHE_KEY);
+    return null;
+  }
 }
 
 function writeCache(key, value) {
-  const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
-  cache[key] = { createdAt: Date.now(), value };
-  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  try {
+    const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
+    cache[key] = { createdAt: Date.now(), value: value.slice(0, 30) };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    localStorage.removeItem(CACHE_KEY);
+  }
 }
 
 function setStatus(message) {
