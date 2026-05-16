@@ -11,8 +11,10 @@ const template = document.querySelector("#track-card-template");
 
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
+const AUDIO_PROXY_URL = "/api/audio";
 const CACHE_KEY = "vibingecho-cache-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
+const AUDIO_ANALYSIS_LIMIT = 42;
 
 const moodLabels = {
   melancholic: "melancholic",
@@ -115,12 +117,14 @@ form.addEventListener("submit", async (event) => {
       return;
     }
 
+    setStatus("Analyzing the reference preview...");
+    seed.audioFeatures = await analyzeTrackAudio(seed);
     renderSeed(seed);
-    setStatus("Building candidates and matching the vibe...");
+    setStatus("Analyzing candidate previews and matching the closest feel...");
 
-    const selectedMood = moodInput.value === "auto" ? inferMood(seed) : moodInput.value;
+    const selectedMood = moodInput.value === "auto" ? inferMood(seed, seed.audioFeatures) : moodInput.value;
     const candidates = await collectCandidates(seed, country, selectedMood);
-    const recommendations = rankTracks(seed, candidates, selectedMood);
+    const recommendations = await rankTracks(seed, candidates, selectedMood);
 
     if (!recommendations.length) {
       setStatus("I found the reference, but not enough strong recommendations.");
@@ -129,7 +133,7 @@ form.addEventListener("submit", async (event) => {
 
     renderResults(recommendations, selectedMood);
     setStatus(
-      `Scanned ${candidates.length} iTunes tracks and selected ${recommendations.length} with a ${moodLabels[selectedMood]} vibe.`,
+      `Analyzed ${Math.min(candidates.length, AUDIO_ANALYSIS_LIMIT)} previews and selected ${recommendations.length} close matches.`,
     );
   } catch (error) {
     console.error(error);
@@ -145,12 +149,20 @@ clearCacheButton.addEventListener("click", () => {
 });
 
 async function findSeedTrack(term, country) {
-  const [artistResults, songResults] = await Promise.all([
-    searchItunes({ term, country, attribute: "artistTerm", limit: 25 }),
+  const [defaultResults, songResults, artistResults, usResults] = await Promise.all([
+    searchItunes({ term, country, limit: 50 }),
     searchItunes({ term, country, attribute: "songTerm", limit: 25 }),
+    searchItunes({ term, country, attribute: "artistTerm", limit: 25 }),
+    country === "US" ? Promise.resolve([]) : searchItunes({ term, country: "US", limit: 25 }),
   ]);
 
-  const combined = [...artistResults, ...songResults].filter(isSong);
+  const combined = annotateSearchRank([
+    ...defaultResults,
+    ...songResults,
+    ...usResults,
+    ...artistResults,
+  ]).filter(isSong);
+
   return dedupeTracks(combined).sort((a, b) => seedScore(term, b) - seedScore(term, a))[0];
 }
 
@@ -242,29 +254,40 @@ function jsonp(url) {
   });
 }
 
-function rankTracks(seed, tracks, mood) {
-  const ranked = tracks
+async function rankTracks(seed, tracks, mood) {
+  const seedProfile = vibeProfile(seed, seed.audioFeatures);
+  const analyzedTracks = await mapWithConcurrency(tracks.slice(0, AUDIO_ANALYSIS_LIMIT), 6, async (track) => ({
+      ...track,
+      audioFeatures: await analyzeTrackAudio(track),
+    }));
+
+  const ranked = analyzedTracks
     .filter((track) => track.trackId !== seed.trackId)
     .map((track) => {
       const reasons = [];
       let score = 0;
-      const profile = vibeProfile(track);
-      const seedProfile = vibeProfile(seed);
+      const profile = vibeProfile(track, track.audioFeatures);
+      const audioSimilarity = compareAudioFeatures(seed.audioFeatures, track.audioFeatures);
 
-      const moodMatch = inferMood(track) === mood;
+      if (audioSimilarity.available) {
+        score += Math.round(audioSimilarity.score * 62);
+        reasons.push(audioSimilarity.reason);
+      }
+
+      const moodMatch = inferMood(track, track.audioFeatures) === mood;
       if (moodMatch) {
-        score += 42;
-        reasons.push(`${moodLabels[mood]} vibe`);
+        score += audioSimilarity.available ? 18 : 42;
+        reasons.push(`${moodLabels[mood]} emotional profile`);
       }
 
       const durationDiff = Math.abs((seed.trackTimeMillis || 0) - (track.trackTimeMillis || 0));
       if (durationDiff && durationDiff < 45000) {
-        score += 18;
+        score += audioSimilarity.available ? 7 : 18;
         reasons.push("similar pacing");
       }
 
       if (profile.pace === seedProfile.pace) {
-        score += 12;
+        score += 10;
         reasons.push(`${profile.pace} pace`);
       }
 
@@ -274,7 +297,7 @@ function rankTracks(seed, tracks, mood) {
       }
 
       if (same(seed.primaryGenreName, track.primaryGenreName)) {
-        score += 28;
+        score += audioSimilarity.available ? 8 : 28;
         reasons.push(`nearby sound: ${track.primaryGenreName}`);
       }
 
@@ -284,10 +307,10 @@ function rankTracks(seed, tracks, mood) {
         reasons: reasons.slice(0, 3),
         mood: profile.mood,
         profile,
-        analysis: vibeAnalysis(track, seed, profile),
+        analysis: vibeAnalysis(track, seed, profile, audioSimilarity),
       };
     })
-    .filter((track) => track.score >= 28)
+    .filter((track) => track.score >= 34)
     .sort((a, b) => b.score - a.score);
 
   return diversifyTracks(ranked, 12);
@@ -330,8 +353,8 @@ function diversifyTracks(tracks, limit) {
   return selected;
 }
 
-function vibeProfile(track) {
-  const mood = inferMood(track);
+function vibeProfile(track, features = null) {
+  const mood = inferMood(track, features);
   const duration = track.trackTimeMillis || 0;
   const genre = normalize(track.primaryGenreName || "");
   const title = normalize(`${track.trackName} ${track.collectionName}`);
@@ -344,6 +367,10 @@ function vibeProfile(track) {
   }
   if (genre.includes("classical") || genre.includes("ambient") || title.includes("acoustic")) {
     pace = "slow";
+  }
+  if (features) {
+    if (features.pulse > 0.63) pace = "quick";
+    if (features.pulse < 0.36) pace = "slow";
   }
 
   let texture = "polished";
@@ -359,23 +386,43 @@ function vibeProfile(track) {
   if (genre.includes("hip-hop") || genre.includes("rap") || genre.includes("dance") || genre.includes("funk")) {
     texture = "rhythmic";
   }
+  if (features) {
+    if (features.brightness > 0.62 && features.dynamics < 0.34) texture = "polished";
+    if (features.brightness < 0.38 && features.dynamics > 0.44) texture = "raw";
+    if (features.brightness < 0.42 && features.pulse < 0.42) texture = "atmospheric";
+    if (features.pulse > 0.58 && features.dynamics > 0.32) texture = "rhythmic";
+    if (features.warmth > 0.55) texture = "warm";
+  }
 
   return { mood, pace, texture };
 }
 
-function vibeAnalysis(track, seed, profile) {
+function vibeAnalysis(track, seed, profile, audioSimilarity) {
   const genre = track.primaryGenreName || "its genre";
-  const seedMood = moodLabels[inferMood(seed)];
+  const seedMood = moodLabels[inferMood(seed, seed.audioFeatures)];
   const currentMood = moodLabels[profile.mood];
   const contrast =
     currentMood === seedMood
       ? `It stays close to the reference's ${seedMood} emotional lane.`
       : `It adds a ${currentMood} shade around the reference's ${seedMood} center.`;
 
-  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} In context, ${genre} makes it feel distinct instead of just repeating the same match. ${contrast}`;
+  const audioLine = audioSimilarity.available
+    ? `The preview is close in ${audioSimilarity.reason}, so the match is based on the sound itself.`
+    : "The preview could not be analyzed, so this match uses catalog signals only.";
+
+  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} In context, ${genre} keeps it distinct instead of just repeating the same match. ${contrast}`;
 }
 
-function inferMood(track) {
+function inferMood(track, features = null) {
+  if (features) {
+    if (features.energy > 0.66 && features.pulse > 0.56) return "energetic";
+    if (features.energy < 0.34 && features.brightness < 0.46) return "melancholic";
+    if (features.energy < 0.38 && features.pulse < 0.42) return "calm";
+    if (features.brightness < 0.34 && features.dynamics > 0.42) return "dark";
+    if (features.brightness > 0.62 && features.energy > 0.44) return "bright";
+    if (features.warmth > 0.56 && features.energy < 0.62) return "romantic";
+  }
+
   const haystack = normalize(
     `${track.trackName} ${track.collectionName} ${track.artistName} ${track.primaryGenreName}`,
   );
@@ -404,7 +451,7 @@ function renderSeed(track) {
     <img class="cover" src="${artwork(track, 300)}" alt="Capa de ${escapeHtml(track.trackName)}" />
     <div class="track-info">
       <div class="match-row">
-        <span class="mood-tag">${moodLabels[inferMood(track)]}</span>
+        <span class="mood-tag">${moodLabels[inferMood(track, track.audioFeatures)]}</span>
       </div>
       <h3>${escapeHtml(track.trackName)}</h3>
       <p class="artist">${escapeHtml(track.artistName)} - ${escapeHtml(track.primaryGenreName || "Unknown genre")}</p>
@@ -449,13 +496,41 @@ function renderResults(tracks) {
 
 function seedScore(term, track) {
   const normalizedTerm = normalize(term);
+  const normalizedTitle = normalize(track.trackName);
+  const normalizedArtist = normalize(track.artistName);
+  const normalizedAlbum = normalize(track.collectionName);
+  const searchRank = track.searchRank || 0;
   let score = 0;
-  if (normalize(track.artistName).includes(normalizedTerm)) score += 40;
-  if (normalize(track.trackName).includes(normalizedTerm)) score += 40;
-  if (normalize(track.collectionName).includes(normalizedTerm)) score += 10;
-  if (track.previewUrl) score += 4;
-  if (track.artworkUrl100) score += 3;
+  if (normalizedTitle === normalizedTerm) score += 520;
+  if (normalizedTitle.startsWith(normalizedTerm)) score += 120;
+  if (normalizedTitle.includes(normalizedTerm)) score += 80;
+  if (normalizedArtist.includes(normalizedTerm)) score += 35;
+  if (normalizedAlbum.includes(normalizedTerm)) score += 10;
+  if (track.previewUrl) score += 25;
+  if (track.artworkUrl100) score += 10;
+  score += searchRank;
+
+  const queryAsksForVariant = /live|remix|karaoke|cover|tribute|instrumental|sped|slowed/.test(
+    normalizedTerm,
+  );
+  const variantText = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
+  if (
+    !queryAsksForVariant &&
+    /karaoke|tribute|cover|instrumental|lullaby|remix|sped up|slowed|made famous by/.test(
+      variantText,
+    )
+  ) {
+    score -= 220;
+  }
+
   return score;
+}
+
+function annotateSearchRank(tracks) {
+  return tracks.map((track, index) => ({
+    ...track,
+    searchRank: Math.max(0, 90 - index),
+  }));
 }
 
 function tokens(value) {
@@ -538,4 +613,148 @@ function setStatus(message) {
 function setLoading(isLoading, message) {
   form.querySelector("button").disabled = isLoading;
   if (message) setStatus(message);
+}
+
+async function analyzeTrackAudio(track) {
+  if (!track.previewUrl) return null;
+
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+
+    const response = await fetch(`${AUDIO_PROXY_URL}?url=${encodeURIComponent(track.previewUrl)}`);
+    if (!response.ok) return null;
+
+    const buffer = await response.arrayBuffer();
+    const context = new AudioContextClass();
+    const decoded = await context.decodeAudioData(buffer);
+    const samples = decoded.getChannelData(0);
+    await context.close();
+
+    return extractAudioFeatures(samples, decoded.sampleRate);
+  } catch (error) {
+    return null;
+  }
+}
+
+function extractAudioFeatures(samples, sampleRate) {
+  const frameSize = 2048;
+  const hop = 2048;
+  const energies = [];
+  const zeroCrossings = [];
+  let previousFrameEnergy = 0;
+  let onsetEnergy = 0;
+  let totalAbs = 0;
+
+  for (let start = 0; start + frameSize < samples.length; start += hop) {
+    let sumSquares = 0;
+    let crossings = 0;
+    let absSum = 0;
+
+    for (let i = start + 1; i < start + frameSize; i++) {
+      const sample = samples[i];
+      const previous = samples[i - 1];
+      sumSquares += sample * sample;
+      absSum += Math.abs(sample);
+      if ((sample >= 0 && previous < 0) || (sample < 0 && previous >= 0)) {
+        crossings++;
+      }
+    }
+
+    const rms = Math.sqrt(sumSquares / frameSize);
+    energies.push(rms);
+    zeroCrossings.push(crossings / frameSize);
+    totalAbs += absSum / frameSize;
+
+    if (rms > previousFrameEnergy * 1.24 && rms > 0.018) {
+      onsetEnergy++;
+    }
+    previousFrameEnergy = rms;
+  }
+
+  const avgEnergy = average(energies);
+  const energyStd = standardDeviation(energies, avgEnergy);
+  const brightness = clamp(average(zeroCrossings) * 18, 0, 1);
+  const pulse = clamp((onsetEnergy / Math.max(energies.length, 1)) * 4.2, 0, 1);
+  const dynamics = clamp(energyStd / Math.max(avgEnergy, 0.001), 0, 1);
+  const warmth = clamp((1 - brightness) * 0.55 + avgEnergy * 5 * 0.45, 0, 1);
+
+  return {
+    energy: clamp(avgEnergy * 7, 0, 1),
+    brightness,
+    pulse,
+    dynamics,
+    warmth,
+    loudness: clamp((totalAbs / Math.max(energies.length, 1)) * 8, 0, 1),
+    sampleRate,
+  };
+}
+
+function compareAudioFeatures(seedFeatures, trackFeatures) {
+  if (!seedFeatures || !trackFeatures) {
+    return {
+      available: false,
+      score: 0,
+      reason: "catalog similarity",
+    };
+  }
+
+  const weights = {
+    energy: 0.28,
+    brightness: 0.22,
+    pulse: 0.26,
+    dynamics: 0.14,
+    warmth: 0.1,
+  };
+  let distance = 0;
+
+  for (const [key, weight] of Object.entries(weights)) {
+    distance += Math.abs(seedFeatures[key] - trackFeatures[key]) * weight;
+  }
+
+  const closest = Object.keys(weights).sort((a, b) => {
+    const aDiff = Math.abs(seedFeatures[a] - trackFeatures[a]);
+    const bDiff = Math.abs(seedFeatures[b] - trackFeatures[b]);
+    return aDiff - bDiff;
+  })[0];
+
+  const labels = {
+    energy: "energy",
+    brightness: "brightness",
+    pulse: "pulse",
+    dynamics: "dynamic movement",
+    warmth: "warmth",
+  };
+
+  return {
+    available: true,
+    score: clamp(1 - distance, 0, 1),
+    reason: `similar ${labels[closest]}`,
+  };
+}
+
+function average(values) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function standardDeviation(values, avg) {
+  if (!values.length) return 0;
+  const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = [];
+
+  for (let index = 0; index < items.length; index += limit) {
+    const chunk = items.slice(index, index + limit);
+    results.push(...(await Promise.all(chunk.map(mapper))));
+  }
+
+  return results;
 }
