@@ -10,6 +10,7 @@ const clearCacheButton = document.querySelector("#clear-cache");
 const template = document.querySelector("#track-card-template");
 
 const API_URL = "https://itunes.apple.com/search";
+const PROXY_API_URL = "/api/itunes";
 const CACHE_KEY = "vibingecho-cache-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
 
@@ -154,13 +155,24 @@ async function searchItunes({ term, country, attribute, limit }) {
 
   if (attribute) params.set("attribute", attribute);
 
-  const url = `${API_URL}?${params.toString()}`;
-  const cached = readCache(url);
+  const query = params.toString();
+  const cacheKey = `${API_URL}?${query}`;
+  const cached = readCache(cacheKey);
   if (cached) return cached;
 
-  const data = await jsonp(url);
-  writeCache(url, data.results || []);
+  const data = await fetchItunes(query);
+  writeCache(cacheKey, data.results || []);
   return data.results || [];
+}
+
+async function fetchItunes(query) {
+  try {
+    const response = await fetch(`${PROXY_API_URL}?${query}`);
+    if (!response.ok) throw new Error(`Proxy responded ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return jsonp(`${API_URL}?${query}`);
+  }
 }
 
 function jsonp(url) {
