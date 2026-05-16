@@ -1,42 +1,41 @@
 # VibingEcho
 
-Site estatico para recomendar musicas parecidas usando o catalogo publico do iTunes.
-Nao precisa de backend, banco manual, Java, Node ou chave de API.
+Static website for recommending similar songs using the public iTunes catalog.
+It does not need a backend, manual database, Java, Node, or API key.
 
-## Como funciona
+## How it works
 
-- O usuario digita uma musica ou artista.
-- O site consulta `https://itunes.apple.com/search` sem precisar de chave de API.
-- A faixa de referencia e escolhida entre os melhores resultados.
-- O app busca candidatos por artista, genero, album e pistas de sensacao.
-- As recomendacoes sao ranqueadas por genero, sensacao, artista, duracao, epoca e palavras em comum.
-- O navegador guarda um cache local por 24 horas para evitar chamadas repetidas.
+- The user types a song or artist.
+- The site calls `https://itunes.apple.com/search` without an API key.
+- The reference track is chosen from the best results.
+- The app searches candidates by artist, genre, album, and vibe hints.
+- Recommendations are ranked by genre, vibe, artist, duration, era, and shared words.
+- The browser keeps a local cache for 24 hours to avoid repeated calls.
 
-## Subir no Vercel
+## Deploy to Vercel
 
-1. Envie estes arquivos para um repositorio GitHub.
-2. No Vercel, importe o repositorio.
+1. Push these files to a GitHub repository.
+2. Import the repository in Vercel.
 3. Framework preset: `Other`.
-4. Build command: deixe vazio.
-5. Output directory: deixe vazio ou use `.`.
+4. Build command: leave empty.
+5. Output directory: leave empty or use `.`.
 
-## Rodar pelo terminal
+## Run from the terminal
 
 ```bash
 cd /Users/diogoaiub/Documents/Codex/2026-05-16/estou-fazendo-um-site-ja-tenho
 python3 -m http.server 8080
 ```
 
-Depois abra:
+Then open:
 
 ```text
 http://localhost:8080
 ```
 
-## Observacao importante
+## Important note
 
-A API do iTunes nao entrega analise real de audio, como BPM, energia ou valencia.
-Por isso, este projeto usa metadados publicos do iTunes e uma heuristica de
-"sensacao". Para recomendacao musical ainda mais precisa, o proximo passo seria
-combinar este app com uma API que tenha atributos de audio ou com um backend que
-salve votos dos usuarios.
+The iTunes API does not provide real audio analysis such as BPM, energy, or valence.
+That is why this project uses public iTunes metadata and a vibe-matching heuristic.
+For even more accurate music recommendations, the next step would be combining this
+app with an API that has audio attributes or a backend that stores user feedback.

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -12,15 +12,15 @@
       <section class="hero">
         <div class="hero-copy">
           <p class="eyebrow">VibingEcho</p>
-          <h1>Musicas com a mesma vibe.</h1>
+          <h1>Find songs with the same vibe.</h1>
           <p>
-            Digite um artista ou musica e receba opcoes parecidas, puxadas
-            automaticamente do catalogo publico do iTunes.
+            Type an artist or song and get similar tracks pulled automatically
+            from the public iTunes catalog.
           </p>
         </div>
 
         <form class="search-panel" id="recommendation-form">
-          <label for="music-query">Artista ou musica</label>
+          <label for="music-query">Artist or song</label>
           <div class="search-row">
             <input
               id="music-query"
@@ -30,56 +30,56 @@
               placeholder="Ex: The Weeknd, Billie Eilish, Sweater Weather"
               required
             />
-            <button type="submit">Recomendar</button>
+            <button type="submit">Recommend</button>
           </div>
 
           <div class="controls">
             <label>
-              Pais da loja
+              Store country
               <select id="country">
-                <option value="BR" selected>Brasil</option>
-                <option value="US">Estados Unidos</option>
+                <option value="BR" selected>Brazil</option>
+                <option value="US">United States</option>
                 <option value="PT">Portugal</option>
-                <option value="GB">Reino Unido</option>
-                <option value="ES">Espanha</option>
+                <option value="GB">United Kingdom</option>
+                <option value="ES">Spain</option>
               </select>
             </label>
 
             <label>
-              Sensacao
+              Vibe
               <select id="mood">
-                <option value="auto" selected>Detectar automaticamente</option>
-                <option value="melancholic">Melancolica</option>
-                <option value="romantic">Romantica</option>
-                <option value="energetic">Energica</option>
-                <option value="calm">Calma</option>
-                <option value="dark">Sombria</option>
-                <option value="bright">Leve</option>
+                <option value="auto" selected>Detect automatically</option>
+                <option value="melancholic">Melancholic</option>
+                <option value="romantic">Romantic</option>
+                <option value="energetic">Energetic</option>
+                <option value="calm">Calm</option>
+                <option value="dark">Dark</option>
+                <option value="bright">Bright</option>
               </select>
             </label>
 
             <label class="toggle">
               <input id="prefer-new-artists" type="checkbox" checked />
-              <span>Priorizar artistas diferentes</span>
+              <span>Prioritize different artists</span>
             </label>
           </div>
         </form>
       </section>
 
       <section class="status-area" aria-live="polite">
-          <p id="status-text">Pronto para encontrar uma vibe.</p>
+          <p id="status-text">Ready to find a vibe.</p>
       </section>
 
       <section class="seed-section" id="seed-section" hidden>
-        <h2>Referencia encontrada</h2>
+        <h2>Found reference</h2>
         <div id="seed-card" class="seed-card"></div>
       </section>
 
       <section class="results-section">
         <div class="section-heading">
-          <h2>Recomendacoes</h2>
-          <button id="clear-cache" type="button" title="Limpar cache local">
-            Limpar cache
+          <h2>Recommendations</h2>
+          <button id="clear-cache" type="button" title="Clear local cache">
+            Clear cache
           </button>
         </div>
         <div id="results" class="results-grid"></div>
@@ -101,7 +101,7 @@
             <audio controls preload="none"></audio>
             <a target="_blank" rel="noreferrer">Abrir no iTunes</a>
           </div>
-          <small>Previa fornecida cortesia do iTunes.</small>
+          <small>Preview provided courtesy of iTunes.</small>
         </div>
       </article>
     </template>

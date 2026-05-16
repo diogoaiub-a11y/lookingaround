@@ -11,16 +11,16 @@ const clearCacheButton = document.querySelector("#clear-cache");
 const template = document.querySelector("#track-card-template");
 
 const API_URL = "https://itunes.apple.com/search";
-const CACHE_KEY = "eco-musical-cache-v1";
+const CACHE_KEY = "vibingecho-cache-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
 
 const moodLabels = {
-  melancholic: "melancolica",
-  romantic: "romantica",
-  energetic: "energica",
-  calm: "calma",
-  dark: "sombria",
-  bright: "leve",
+  melancholic: "melancholic",
+  romantic: "romantic",
+  energetic: "energetic",
+  calm: "calm",
+  dark: "dark",
+  bright: "bright",
 };
 
 const moodLexicon = {
@@ -79,7 +79,7 @@ form.addEventListener("submit", async (event) => {
 
   if (!term) return;
 
-  setLoading(true, "Buscando no catalogo do iTunes...");
+  setLoading(true, "Searching the iTunes catalog...");
   seedSection.hidden = true;
   results.innerHTML = "";
 
@@ -89,29 +89,29 @@ form.addEventListener("submit", async (event) => {
     const seed = await findSeedTrack(term, country);
 
     if (!seed) {
-      setStatus("Nao encontrei nenhuma musica para esse termo. Tente outro artista ou faixa.");
+      setStatus("I could not find a song for that search. Try another artist or track.");
       return;
     }
 
     renderSeed(seed);
-    setStatus("Montando candidatos e calculando sensacao parecida...");
+    setStatus("Building candidates and matching the vibe...");
 
     const selectedMood = moodInput.value === "auto" ? inferMood(seed) : moodInput.value;
     const candidates = await collectCandidates(seed, country, selectedMood);
     const recommendations = rankTracks(seed, candidates, selectedMood, preferNewArtists).slice(0, 12);
 
     if (!recommendations.length) {
-      setStatus("Encontrei a referencia, mas nao achei recomendacoes boas o suficiente.");
+      setStatus("I found the reference, but not enough strong recommendations.");
       return;
     }
 
     renderResults(recommendations, selectedMood);
     setStatus(
-      `Usei ${candidates.length} faixas do iTunes e selecionei ${recommendations.length} com sensacao ${moodLabels[selectedMood]}.`,
+      `Scanned ${candidates.length} iTunes tracks and selected ${recommendations.length} with a ${moodLabels[selectedMood]} vibe.`,
     );
   } catch (error) {
     console.error(error);
-    setStatus("Nao consegui consultar o iTunes agora. Verifique a conexao e tente de novo.");
+    setStatus("I could not reach iTunes right now. Check your connection and try again.");
   } finally {
     setLoading(false);
   }
@@ -119,7 +119,7 @@ form.addEventListener("submit", async (event) => {
 
 clearCacheButton.addEventListener("click", () => {
   localStorage.removeItem(CACHE_KEY);
-  setStatus("Cache local limpo. As proximas buscas vao consultar o iTunes de novo.");
+  setStatus("Local cache cleared. The next searches will call iTunes again.");
 });
 
 async function findSeedTrack(term, country) {
@@ -179,43 +179,43 @@ function rankTracks(seed, tracks, mood, preferNewArtists) {
 
       if (same(seed.primaryGenreName, track.primaryGenreName)) {
         score += 34;
-        reasons.push(`mesmo genero: ${track.primaryGenreName}`);
+        reasons.push(`same genre: ${track.primaryGenreName}`);
       }
 
       const moodMatch = inferMood(track) === mood;
       if (moodMatch) {
         score += 26;
-        reasons.push(`sensacao ${moodLabels[mood]}`);
+        reasons.push(`${moodLabels[mood]} vibe`);
       }
 
       if (same(seed.artistName, track.artistName)) {
         score += preferNewArtists ? 2 : 16;
-        reasons.push("mesmo artista");
+        reasons.push("same artist");
       } else if (preferNewArtists) {
         score += 10;
-        reasons.push("artista diferente");
+        reasons.push("different artist");
       }
 
       if (same(seed.collectionName, track.collectionName)) {
         score += 8;
-        reasons.push("mesmo album");
+        reasons.push("same album");
       }
 
       const durationDiff = Math.abs((seed.trackTimeMillis || 0) - (track.trackTimeMillis || 0));
       if (durationDiff && durationDiff < 45000) {
         score += 8;
-        reasons.push("duracao parecida");
+        reasons.push("similar duration");
       }
 
       const yearDiff = Math.abs(year(seed.releaseDate) - year(track.releaseDate));
       if (!Number.isNaN(yearDiff) && yearDiff <= 4) {
         score += 6;
-        reasons.push("epoca parecida");
+        reasons.push("similar era");
       }
 
       const overlap = keywordOverlap(seed, track);
       score += Math.min(overlap * 4, 16);
-      if (overlap > 0) reasons.push("palavras em comum");
+      if (overlap > 0) reasons.push("shared keywords");
 
       return {
         ...track,
@@ -260,13 +260,13 @@ function renderSeed(track) {
         <span class="mood-tag">${moodLabels[inferMood(track)]}</span>
       </div>
       <h3>${escapeHtml(track.trackName)}</h3>
-      <p class="artist">${escapeHtml(track.artistName)} - ${escapeHtml(track.primaryGenreName || "Genero desconhecido")}</p>
-      <p class="why">${escapeHtml(track.collectionName || "Album nao informado")} ${year(track.releaseDate) || ""}</p>
+      <p class="artist">${escapeHtml(track.artistName)} - ${escapeHtml(track.primaryGenreName || "Unknown genre")}</p>
+      <p class="why">${escapeHtml(track.collectionName || "Album not available")} ${year(track.releaseDate) || ""}</p>
       <div class="actions">
         ${track.previewUrl ? `<audio controls preload="none" src="${track.previewUrl}"></audio>` : ""}
-        <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">Abrir no iTunes</a>
+        <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">Open in iTunes</a>
       </div>
-      <small>Previa fornecida cortesia do iTunes.</small>
+      <small>Preview provided courtesy of iTunes.</small>
     </div>
   `;
 }
@@ -281,10 +281,10 @@ function renderResults(tracks) {
     node.querySelector(".match-score").textContent = `${Math.round(track.score)}% match`;
     node.querySelector(".mood-tag").textContent = moodLabels[track.mood];
     node.querySelector("h3").textContent = track.trackName;
-    node.querySelector(".artist").textContent = `${track.artistName} - ${track.primaryGenreName || "Genero desconhecido"}`;
+    node.querySelector(".artist").textContent = `${track.artistName} - ${track.primaryGenreName || "Unknown genre"}`;
     node.querySelector(".why").textContent = track.reasons.length
-      ? `Porque combina: ${track.reasons.join(", ")}.`
-      : "Porque tem elementos musicais proximos da referencia.";
+      ? `Why it matches: ${track.reasons.join(", ")}.`
+      : "Because it has musical elements close to the reference.";
 
     const audio = node.querySelector("audio");
     if (track.previewUrl) {
@@ -295,7 +295,7 @@ function renderResults(tracks) {
 
     const link = node.querySelector("a");
     link.href = track.trackViewUrl;
-    link.textContent = "Abrir no iTunes";
+    link.textContent = "Open in iTunes";
 
     results.appendChild(node);
   }

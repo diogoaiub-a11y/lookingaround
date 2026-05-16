@@ -1,15 +1,15 @@
 :root {
   color-scheme: dark;
-  --bg: #101114;
-  --panel: #191b20;
-  --panel-strong: #20232a;
-  --text: #f6f2e8;
-  --muted: #b8b1a5;
-  --line: #343039;
-  --accent: #ffcf5a;
-  --accent-strong: #f05d48;
-  --blue: #62c6df;
-  --green: #7bd88f;
+  --bg: #020403;
+  --panel: #0b1210;
+  --panel-strong: #111d18;
+  --text: #f1fff7;
+  --muted: #9eb7aa;
+  --line: #1c3429;
+  --accent: #38f28d;
+  --accent-strong: #12b66c;
+  --blue: #80f7bd;
+  --green: #38f28d;
   --shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -24,8 +24,8 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    linear-gradient(135deg, rgba(240, 93, 72, 0.16), transparent 34%),
-    radial-gradient(circle at 90% 10%, rgba(98, 198, 223, 0.2), transparent 28%),
+    linear-gradient(135deg, rgba(18, 182, 108, 0.18), transparent 34%),
+    radial-gradient(circle at 90% 10%, rgba(56, 242, 141, 0.18), transparent 28%),
     var(--bg);
   color: var(--text);
 }
@@ -87,7 +87,7 @@ h1 {
 
 .search-panel {
   padding: 22px;
-  background: rgba(25, 27, 32, 0.86);
+  background: rgba(11, 18, 16, 0.88);
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
@@ -115,7 +115,7 @@ select {
   width: 100%;
   min-height: 48px;
   color: var(--text);
-  background: #0d0f12;
+  background: #020403;
   border: 1px solid var(--line);
   border-radius: 6px;
   outline: none;
@@ -263,7 +263,7 @@ button:disabled {
 
 .mood-tag {
   color: var(--blue);
-  background: rgba(98, 198, 223, 0.12);
+  background: rgba(56, 242, 141, 0.12);
 }
 
 h2 {
