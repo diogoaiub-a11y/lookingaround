@@ -73,6 +73,29 @@ const genreMoodHints = {
   bright: ["reggae", "ska", "disco", "k-pop", "j-pop"],
 };
 
+const moodAnalysis = {
+  melancholic: "leans into a reflective, late-night feeling",
+  romantic: "feels intimate and emotionally close",
+  energetic: "pushes a more active, high-motion feeling",
+  calm: "keeps the mood soft, steady, and spacious",
+  dark: "carries a heavier and more shadowed atmosphere",
+  bright: "feels lighter, open, and more uplifting",
+};
+
+const paceAnalysis = {
+  slow: "Its longer shape gives the track room to breathe.",
+  steady: "Its medium length keeps the emotion focused without rushing it.",
+  quick: "Its tighter length makes the feeling arrive quickly.",
+};
+
+const textureAnalysis = {
+  polished: "The style suggests a clean, polished sound.",
+  warm: "The style points to a warmer and more human texture.",
+  raw: "The style gives it a rougher, more direct edge.",
+  atmospheric: "The style makes it feel more atmospheric and immersive.",
+  rhythmic: "The style is driven by groove and movement.",
+};
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const term = queryInput.value.trim();
@@ -97,7 +120,7 @@ form.addEventListener("submit", async (event) => {
 
     const selectedMood = moodInput.value === "auto" ? inferMood(seed) : moodInput.value;
     const candidates = await collectCandidates(seed, country, selectedMood);
-    const recommendations = rankTracks(seed, candidates, selectedMood).slice(0, 12);
+    const recommendations = rankTracks(seed, candidates, selectedMood);
 
     if (!recommendations.length) {
       setStatus("I found the reference, but not enough strong recommendations.");
@@ -220,11 +243,13 @@ function jsonp(url) {
 }
 
 function rankTracks(seed, tracks, mood) {
-  return tracks
+  const ranked = tracks
     .filter((track) => track.trackId !== seed.trackId)
     .map((track) => {
       const reasons = [];
       let score = 0;
+      const profile = vibeProfile(track);
+      const seedProfile = vibeProfile(seed);
 
       const moodMatch = inferMood(track) === mood;
       if (moodMatch) {
@@ -238,6 +263,16 @@ function rankTracks(seed, tracks, mood) {
         reasons.push("similar pacing");
       }
 
+      if (profile.pace === seedProfile.pace) {
+        score += 12;
+        reasons.push(`${profile.pace} pace`);
+      }
+
+      if (profile.texture === seedProfile.texture) {
+        score += 10;
+        reasons.push(`${profile.texture} texture`);
+      }
+
       if (same(seed.primaryGenreName, track.primaryGenreName)) {
         score += 28;
         reasons.push(`nearby sound: ${track.primaryGenreName}`);
@@ -245,13 +280,99 @@ function rankTracks(seed, tracks, mood) {
 
       return {
         ...track,
-        score,
+        score: Math.min(score, 99),
         reasons: reasons.slice(0, 3),
-        mood: inferMood(track),
+        mood: profile.mood,
+        profile,
+        analysis: vibeAnalysis(track, seed, profile),
       };
     })
     .filter((track) => track.score >= 28)
     .sort((a, b) => b.score - a.score);
+
+  return diversifyTracks(ranked, 12);
+}
+
+function diversifyTracks(tracks, limit) {
+  const selected = [];
+  const profileCount = new Map();
+  const artistCount = new Map();
+
+  for (const track of tracks) {
+    const profileKey = `${track.profile.mood}-${track.profile.pace}-${track.profile.texture}`;
+    const artistKey = normalize(track.artistName);
+    const profileUses = profileCount.get(profileKey) || 0;
+    const artistUses = artistCount.get(artistKey) || 0;
+
+    if (profileUses >= 2 || artistUses >= 2) {
+      continue;
+    }
+
+    selected.push(track);
+    profileCount.set(profileKey, profileUses + 1);
+    artistCount.set(artistKey, artistUses + 1);
+
+    if (selected.length === limit) {
+      return selected;
+    }
+  }
+
+  for (const track of tracks) {
+    if (!selected.some((item) => item.trackId === track.trackId)) {
+      selected.push(track);
+    }
+
+    if (selected.length === limit) {
+      break;
+    }
+  }
+
+  return selected;
+}
+
+function vibeProfile(track) {
+  const mood = inferMood(track);
+  const duration = track.trackTimeMillis || 0;
+  const genre = normalize(track.primaryGenreName || "");
+  const title = normalize(`${track.trackName} ${track.collectionName}`);
+
+  let pace = "steady";
+  if (duration && duration < 170000) pace = "quick";
+  if (duration && duration > 245000) pace = "slow";
+  if (genre.includes("dance") || genre.includes("electronic") || genre.includes("funk")) {
+    pace = "quick";
+  }
+  if (genre.includes("classical") || genre.includes("ambient") || title.includes("acoustic")) {
+    pace = "slow";
+  }
+
+  let texture = "polished";
+  if (genre.includes("soul") || genre.includes("r&b") || genre.includes("jazz") || genre.includes("mpb")) {
+    texture = "warm";
+  }
+  if (genre.includes("rock") || genre.includes("punk") || genre.includes("metal") || genre.includes("blues")) {
+    texture = "raw";
+  }
+  if (genre.includes("ambient") || genre.includes("alternative") || genre.includes("indie")) {
+    texture = "atmospheric";
+  }
+  if (genre.includes("hip-hop") || genre.includes("rap") || genre.includes("dance") || genre.includes("funk")) {
+    texture = "rhythmic";
+  }
+
+  return { mood, pace, texture };
+}
+
+function vibeAnalysis(track, seed, profile) {
+  const genre = track.primaryGenreName || "its genre";
+  const seedMood = moodLabels[inferMood(seed)];
+  const currentMood = moodLabels[profile.mood];
+  const contrast =
+    currentMood === seedMood
+      ? `It stays close to the reference's ${seedMood} emotional lane.`
+      : `It adds a ${currentMood} shade around the reference's ${seedMood} center.`;
+
+  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} In context, ${genre} makes it feel distinct instead of just repeating the same match. ${contrast}`;
 }
 
 function inferMood(track) {
@@ -305,12 +426,11 @@ function renderResults(tracks) {
     node.querySelector(".cover").src = artwork(track, 300);
     node.querySelector(".cover").alt = `Capa de ${track.trackName}`;
     node.querySelector(".match-score").textContent = `${Math.round(track.score)}% match`;
-    node.querySelector(".mood-tag").textContent = moodLabels[track.mood];
+    node.querySelector(".mood-tag").textContent =
+      `${moodLabels[track.mood]} / ${track.profile.texture} ${track.profile.pace}`;
     node.querySelector("h3").textContent = track.trackName;
     node.querySelector(".artist").textContent = `${track.artistName} - ${track.primaryGenreName || "Unknown genre"}`;
-    node.querySelector(".why").textContent = track.reasons.length
-      ? `Why it matches: ${track.reasons.join(", ")}.`
-      : "Because it has musical elements close to the reference.";
+    node.querySelector(".why").textContent = track.analysis;
 
     const audio = node.querySelector("audio");
     if (track.previewUrl) {
