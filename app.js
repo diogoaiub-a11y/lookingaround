@@ -305,10 +305,8 @@ async function rankTracks(seed, tracks, mood) {
       audioFeatures: await analyzeTrackAudio(track),
     }));
 
-  const needsAudioMatch = Boolean(seed.audioFeatures);
   const ranked = analyzedTracks
     .filter((track) => track.trackId !== seed.trackId)
-    .filter((track) => !needsAudioMatch || track.audioFeatures)
     .map((track) => {
       const reasons = [];
       let score = 0;
@@ -353,6 +351,10 @@ async function rankTracks(seed, tracks, mood) {
         score += 4;
       }
 
+      if (isLowQualityVariant(track)) {
+        score -= 35;
+      }
+
       return {
         ...track,
         score: Math.min(score, 99),
@@ -362,16 +364,24 @@ async function rankTracks(seed, tracks, mood) {
         analysis: vibeAnalysis(track, seed, profile, audioSimilarity),
       };
     })
-    .filter((track) => track.score >= (needsAudioMatch ? 62 : 48))
     .sort((a, b) => b.score - a.score);
 
-  return diversifyTracks(ranked, 12);
+  const audioRanked = ranked.filter((track) => track.audioFeatures && track.score >= 56);
+  const fallbackRanked = ranked.filter((track) => !track.audioFeatures && track.score >= 42);
+  const primary = diversifyTracks(audioRanked, 12, { strict: true });
+
+  if (primary.length >= 6) {
+    return primary;
+  }
+
+  return diversifyTracks([...primary, ...fallbackRanked], 12, { strict: false });
 }
 
-function diversifyTracks(tracks, limit) {
+function diversifyTracks(tracks, limit, options = {}) {
   const selected = [];
   const profileCount = new Map();
   const artistCount = new Map();
+  const strict = options.strict ?? false;
 
   for (const track of tracks) {
     const profileKey = `${track.profile.mood}-${track.profile.pace}-${track.profile.texture}`;
@@ -379,7 +389,7 @@ function diversifyTracks(tracks, limit) {
     const profileUses = profileCount.get(profileKey) || 0;
     const artistUses = artistCount.get(artistKey) || 0;
 
-    if (profileUses >= 1 || artistUses >= 1) {
+    if (profileUses >= (strict ? 1 : 2) || artistUses >= (strict ? 1 : 2)) {
       continue;
     }
 
