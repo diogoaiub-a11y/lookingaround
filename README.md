@@ -8,8 +8,8 @@ It does not need a backend, manual database, Java, Node, or API key.
 - The user types a song or artist.
 - The site calls `https://itunes.apple.com/search` without an API key.
 - The reference track is chosen from the best results.
-- The app searches candidates by artist, genre, album, and vibe hints.
-- Recommendations are ranked by genre, vibe, artist, duration, era, and shared words.
+- The app searches candidates by genre, vibe hints, and lyrical/theme keywords.
+- Recommendations are ranked mostly by vibe, shared lyrical themes, mood words, and pacing.
 - The browser keeps a local cache for 24 hours to avoid repeated calls.
 
 ## Deploy to Vercel
@@ -35,7 +35,8 @@ http://localhost:8080
 
 ## Important note
 
-The iTunes API does not provide real audio analysis such as BPM, energy, or valence.
-That is why this project uses public iTunes metadata and a vibe-matching heuristic.
+The iTunes API does not provide real audio analysis such as BPM, energy, valence,
+or full lyrics. That is why this project uses public iTunes metadata, track names,
+album names, genres, and a vibe-matching heuristic.
 For even more accurate music recommendations, the next step would be combining this
 app with an API that has audio attributes or a backend that stores user feedback.

@@ -2,7 +2,6 @@ const form = document.querySelector("#recommendation-form");
 const queryInput = document.querySelector("#music-query");
 const countryInput = document.querySelector("#country");
 const moodInput = document.querySelector("#mood");
-const preferNewArtistsInput = document.querySelector("#prefer-new-artists");
 const statusText = document.querySelector("#status-text");
 const seedSection = document.querySelector("#seed-section");
 const seedCard = document.querySelector("#seed-card");
@@ -85,7 +84,6 @@ form.addEventListener("submit", async (event) => {
 
   try {
     const country = countryInput.value;
-    const preferNewArtists = preferNewArtistsInput.checked;
     const seed = await findSeedTrack(term, country);
 
     if (!seed) {
@@ -98,7 +96,7 @@ form.addEventListener("submit", async (event) => {
 
     const selectedMood = moodInput.value === "auto" ? inferMood(seed) : moodInput.value;
     const candidates = await collectCandidates(seed, country, selectedMood);
-    const recommendations = rankTracks(seed, candidates, selectedMood, preferNewArtists).slice(0, 12);
+    const recommendations = rankTracks(seed, candidates, selectedMood).slice(0, 12);
 
     if (!recommendations.length) {
       setStatus("I found the reference, but not enough strong recommendations.");
@@ -134,9 +132,8 @@ async function findSeedTrack(term, country) {
 
 async function collectCandidates(seed, country, mood) {
   const terms = [
-    seed.artistName,
     seed.primaryGenreName,
-    seed.collectionName,
+    ...lyricalKeywords(seed).slice(0, 4),
     ...genreMoodHints[mood].slice(0, 3),
   ].filter(Boolean);
 
@@ -170,52 +167,41 @@ async function searchItunes({ term, country, attribute, limit }) {
   return data.results || [];
 }
 
-function rankTracks(seed, tracks, mood, preferNewArtists) {
+function rankTracks(seed, tracks, mood) {
   return tracks
     .filter((track) => track.trackId !== seed.trackId)
     .map((track) => {
       const reasons = [];
       let score = 0;
 
-      if (same(seed.primaryGenreName, track.primaryGenreName)) {
-        score += 34;
-        reasons.push(`same genre: ${track.primaryGenreName}`);
-      }
-
       const moodMatch = inferMood(track) === mood;
       if (moodMatch) {
-        score += 26;
+        score += 42;
         reasons.push(`${moodLabels[mood]} vibe`);
       }
 
-      if (same(seed.artistName, track.artistName)) {
-        score += preferNewArtists ? 2 : 16;
-        reasons.push("same artist");
-      } else if (preferNewArtists) {
-        score += 10;
-        reasons.push("different artist");
+      const lyricalOverlap = keywordOverlap(seed, track);
+      if (lyricalOverlap > 0) {
+        score += Math.min(lyricalOverlap * 14, 42);
+        reasons.push("similar lyrical themes");
       }
 
-      if (same(seed.collectionName, track.collectionName)) {
-        score += 8;
-        reasons.push("same album");
+      const moodWordOverlap = sharedMoodWords(seed, track);
+      if (moodWordOverlap > 0) {
+        score += Math.min(moodWordOverlap * 12, 30);
+        reasons.push("shared mood words");
       }
 
       const durationDiff = Math.abs((seed.trackTimeMillis || 0) - (track.trackTimeMillis || 0));
       if (durationDiff && durationDiff < 45000) {
-        score += 8;
-        reasons.push("similar duration");
-      }
-
-      const yearDiff = Math.abs(year(seed.releaseDate) - year(track.releaseDate));
-      if (!Number.isNaN(yearDiff) && yearDiff <= 4) {
         score += 6;
-        reasons.push("similar era");
+        reasons.push("similar pacing");
       }
 
-      const overlap = keywordOverlap(seed, track);
-      score += Math.min(overlap * 4, 16);
-      if (overlap > 0) reasons.push("shared keywords");
+      if (same(seed.primaryGenreName, track.primaryGenreName)) {
+        score += 10;
+        reasons.push(`nearby sound: ${track.primaryGenreName}`);
+      }
 
       return {
         ...track,
@@ -224,7 +210,7 @@ function rankTracks(seed, tracks, mood, preferNewArtists) {
         mood: inferMood(track),
       };
     })
-    .filter((track) => track.score >= 24)
+    .filter((track) => track.score >= 26)
     .sort((a, b) => b.score - a.score);
 }
 
@@ -313,10 +299,41 @@ function seedScore(term, track) {
 }
 
 function keywordOverlap(a, b) {
-  const left = new Set(tokens(`${a.trackName} ${a.collectionName} ${a.artistName}`));
-  return tokens(`${b.trackName} ${b.collectionName} ${b.artistName}`).filter((word) =>
-    left.has(word),
-  ).length;
+  const left = new Set(lyricalKeywords(a));
+  return lyricalKeywords(b).filter((word) => left.has(word)).length;
+}
+
+function sharedMoodWords(a, b) {
+  const leftText = normalize(`${a.trackName} ${a.collectionName} ${a.primaryGenreName}`);
+  const rightText = normalize(`${b.trackName} ${b.collectionName} ${b.primaryGenreName}`);
+  let total = 0;
+
+  for (const words of Object.values(moodLexicon)) {
+    for (const word of words) {
+      if (leftText.includes(word) && rightText.includes(word)) {
+        total++;
+      }
+    }
+  }
+
+  return total;
+}
+
+function lyricalKeywords(track) {
+  const words = tokens(`${track.trackName} ${track.collectionName} ${track.primaryGenreName}`);
+  const blocked = new Set([
+    "feat",
+    "featuring",
+    "version",
+    "remix",
+    "edit",
+    "explicit",
+    "single",
+    "album",
+    "deluxe",
+  ]);
+
+  return words.filter((word) => !blocked.has(word));
 }
 
 function tokens(value) {
