@@ -15,19 +15,19 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-open-vibes-v26";
+const APP_VERSION = "vibingecho-open-vibes-v27";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-open-cache-v26";
+const CACHE_KEY = "vibingecho-open-cache-v27";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
-const RECOMMENDATION_LIMIT = 24;
-const CATEGORY_LIMIT = 24;
+const RECOMMENDATION_LIMIT = 36;
+const CATEGORY_LIMIT = 36;
 
 const currentTracks = new Map();
 
@@ -267,8 +267,8 @@ async function runFromSeed(seed) {
 
   try {
     seed.openMusic = seed.openMusic || (await enrichOpenMusic(seed));
-    seed.media = seed.media || (await enrichMedia(seed));
     renderSeed(seed);
+    hydrateSeedMedia(seed);
     setStatus("Finding ListenBrainz neighbors, then comparing AcousticBrainz sound criteria...");
 
     const candidates = await collectCandidates(seed);
@@ -302,10 +302,9 @@ async function runCategory(category) {
   try {
     const batches = await Promise.all(data.terms.map((term) => searchOpenRecordings(term, 18)));
     const candidates = dedupeTracks(batches.flat().map(normalizeMusicBrainzRecording).filter(Boolean));
-    const enriched = await mapWithConcurrency(candidates.slice(0, 36), 5, async (track) => ({
+    const enriched = await mapWithConcurrency(candidates.slice(0, 60), 8, async (track) => ({
       ...track,
       openMusic: await enrichOpenMusic(track),
-      media: await enrichMedia(track),
     }));
     const recommendations = rankCategoryTracks(category, enriched);
 
@@ -467,10 +466,9 @@ function normalizeDeezerMedia(media, track) {
 async function rankTracks(seed, tracks, mood, similarity = 0.72) {
   const seedOpen = seed.openMusic || (await enrichOpenMusic(seed));
   const selectedMood = mood === "auto" ? null : mood;
-  const enrichedTracks = await mapWithConcurrency(tracks.slice(0, 50), 5, async (track) => ({
+  const enrichedTracks = await mapWithConcurrency(tracks.slice(0, 80), 8, async (track) => ({
     ...track,
     openMusic: track.openMusic || (await enrichOpenMusic(track)),
-    media: track.media || (await enrichMedia(track)),
   }));
 
   const ranked = enrichedTracks
@@ -991,6 +989,7 @@ function renderSeed(track) {
     ? "AcousticBrainz audio criteria available."
     : "AcousticBrainz has no audio profile for this recording, so matches use ListenBrainz neighbors plus MusicBrainz tags.";
 
+  seedCard.dataset.trackId = track.trackId;
   seedCard.innerHTML = `
     <img class="cover" src="${artwork(track, 300)}" alt="Cover for ${escapeHtml(track.trackName)}" />
     <div>
@@ -998,7 +997,7 @@ function renderSeed(track) {
       <h3>${escapeHtml(track.trackName)}</h3>
       <p class="artist">${escapeHtml(track.artistName)}</p>
       <p class="why">${escapeHtml(track.collectionName || "Release not listed")} ${year(track.releaseDate) || ""}. ${escapeHtml(acoustic)} Sources: ${escapeHtml(sources)}.</p>
-      ${track.media?.previewUrl ? `<audio controls preload="none" src="${escapeHtml(track.media.previewUrl)}"></audio>` : ""}
+      <audio controls preload="none" hidden></audio>
       <div class="actions">
         <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">Open in MusicBrainz</a>
       </div>
@@ -1030,16 +1029,46 @@ function renderResults(tracks) {
     node.querySelector(".favorite").textContent = isFavorite(track) ? "Saved" : "Save";
     link.href = track.trackViewUrl;
     link.textContent = "Open in MusicBrainz";
-    if (track.media?.previewUrl) {
-      audio.src = track.media.previewUrl;
-    } else {
-      audio.remove();
-    }
-    small.textContent = track.media?.previewUrl
-      ? "Preview and cover from Deezer. Similarity data from MusicBrainz, ListenBrainz, and AcousticBrainz."
-      : "Cover fallback from open music data. Preview unavailable for this track.";
+    audio.hidden = true;
+    small.textContent = "Loading cover and preview...";
 
     results.appendChild(node);
+  });
+
+  hydrateMediaForTracks(tracks);
+}
+
+async function hydrateSeedMedia(track) {
+  track.media = track.media || (await enrichMedia(track));
+  if (seedCard.dataset.trackId !== track.trackId) return;
+  const image = seedCard.querySelector("img.cover");
+  const audio = seedCard.querySelector("audio");
+  if (image) image.src = artwork(track, 300);
+  if (audio && track.media?.previewUrl) {
+    audio.src = track.media.previewUrl;
+    audio.hidden = false;
+  }
+}
+
+async function hydrateMediaForTracks(tracks) {
+  await mapWithConcurrency(tracks, 8, async (track) => {
+    track.media = track.media || (await enrichMedia(track));
+    const card = results.querySelector(`[data-track-id="${cssEscape(track.trackId)}"]`);
+    if (!card) return;
+
+    const image = card.querySelector("img.cover");
+    const audio = card.querySelector("audio");
+    const small = card.querySelector("small");
+    if (image) image.src = artwork(track, 300);
+    if (audio && track.media?.previewUrl) {
+      audio.src = track.media.previewUrl;
+      audio.hidden = false;
+    }
+    if (small) {
+      small.textContent = track.media?.previewUrl
+        ? "Preview and cover from Deezer. Similarity data from MusicBrainz, ListenBrainz, and AcousticBrainz."
+        : "Cover loaded when available. Preview unavailable for this track.";
+    }
   });
 }
 
@@ -1536,4 +1565,9 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return CSS.escape(String(value));
+  return String(value).replace(/["\\]/g, "\\$&");
 }
