@@ -16,11 +16,11 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-audio-feel-v11";
+const APP_VERSION = "vibingecho-no-energy-v12";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v11";
+const CACHE_KEY = "vibingecho-cache-v12";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -531,6 +531,7 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
       const sharedVibes = intersection(seedVibes, vibes);
       const sharedFamilies = intersection(seedFamilies, soundFamilies(track));
       const audioSimilarity = compareAudioFeatures(seed.audioFeatures, track.audioFeatures);
+      const criterionMatches = audioSimilarity.criteria || [];
 
       if (audioSimilarity.available) {
         score += Math.round(audioSimilarity.score * (56 + similarity * 42));
@@ -602,6 +603,7 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         vibes,
         sharedVibes,
         sharedFamilies,
+        criterionMatches,
         audioMatchScore: audioSimilarity.score,
         matchPercent: matchPercent(audioSimilarity, sharedVibes, sharedFamilies, profile, seedProfile),
         analysis: vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags, sharedVibes, sharedFamilies),
@@ -772,7 +774,7 @@ function rankCategoryTracks(category, tracks, selectedMood, similarity) {
         score += 18;
       }
       if (track.audioFeatures) {
-        score += Math.round((track.audioFeatures.energy + track.audioFeatures.pulse) * 12);
+        score += Math.round((track.audioFeatures.pulse + track.audioFeatures.punch) * 12);
       }
       if (isLowQualityVariant(track)) {
         score -= 35;
@@ -796,7 +798,7 @@ function rankCategoryTracks(category, tracks, selectedMood, similarity) {
 
 function categoryAnalysis(track, categoryInfo, profile, sharedTags) {
   const audioLine = track.audioFeatures
-    ? "Its preview was analyzed for energy, pulse, brightness, and warmth."
+    ? "Its preview was analyzed for pulse, bass, treble, punch, brightness, and warmth."
     : "It is included from category relevance because the preview could not be analyzed.";
   const tagLine = sharedTags.length
     ? `Shared tags: ${sharedTags.slice(0, 4).join(", ")}.`
@@ -845,8 +847,6 @@ function trackTags(track, profile = vibeProfile(track, track.audioFeatures)) {
   }
 
   if (track.audioFeatures) {
-    if (track.audioFeatures.energy > 0.68) tags.add("energetic");
-    if (track.audioFeatures.energy < 0.35) tags.add("soft");
     if (track.audioFeatures.pulse > 0.6) tags.add("pulse");
     if (track.audioFeatures.bass > 0.58) tags.add("bass-heavy");
     if (track.audioFeatures.treble > 0.5) tags.add("bright-highs");
@@ -877,21 +877,21 @@ function trackVibes(track, profile = vibeProfile(track, track.audioFeatures)) {
   const features = track.audioFeatures;
 
   if (features) {
-    if (features.energy > 0.72 && features.pulse > 0.58) vibes.add("energetic");
-    if (features.energy > 0.62 && features.brightness > 0.62) vibes.add("euphoric");
-    if (features.energy < 0.36 && features.pulse < 0.42) vibes.add("calm");
-    if (features.energy < 0.42 && features.brightness < 0.42) vibes.add("melancholic");
+    if (features.pulse > 0.66 && features.punch > 0.42) vibes.add("energetic");
+    if (features.pulse > 0.58 && features.brightness > 0.62) vibes.add("euphoric");
+    if (features.pulse < 0.42 && features.punch < 0.35) vibes.add("calm");
+    if (features.brightness < 0.42 && features.pulse < 0.48) vibes.add("melancholic");
     if (features.brightness < 0.34 && features.dynamics > 0.38) vibes.add("dark");
     if (features.brightness > 0.64) vibes.add("bright");
-    if (features.warmth > 0.58 && features.energy < 0.62) vibes.add("romantic");
+    if (features.warmth > 0.58 && features.pulse < 0.58) vibes.add("romantic");
     if (features.warmth > 0.62 && features.pulse < 0.55) vibes.add("sensual");
     if (features.pulse > 0.58 && features.warmth > 0.45) vibes.add("groovy");
-    if (features.dynamics > 0.58 && features.energy > 0.58) vibes.add("aggressive");
+    if (features.dynamics > 0.58 && features.punch > 0.45) vibes.add("aggressive");
     if (features.bass > 0.58 && features.punch > 0.42) vibes.add("punchy");
     if (features.treble > 0.48 && features.bass < 0.5) vibes.add("sharp");
     if (features.bass > 0.62 && features.treble < 0.5) vibes.add("bass-heavy");
     if (features.brightness < 0.44 && features.pulse < 0.45) vibes.add("dreamy");
-    if (features.energy < 0.45 && features.warmth > 0.48) vibes.add("lonely");
+    if (features.pulse < 0.5 && features.warmth > 0.48) vibes.add("lonely");
   }
 
   if (/dream|moon|space|haze|ambient|shoegaze|dream pop/.test(`${genre} ${text}`)) vibes.add("dreamy");
@@ -1032,7 +1032,10 @@ function vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags = [], sh
       : `It adds a ${currentMood} shade around the reference's ${seedMood} center.`;
 
   const audioLine = audioSimilarity.available
-    ? `The preview analysis puts it close to the reference in ${audioSimilarity.reason.replace("similar ", "")}, so this is based on the audio preview rather than just catalog tags.`
+    ? `The preview analysis puts it close in ${audioSimilarity.criteria
+        .slice(0, 3)
+        .map((criterion) => criterion.label)
+        .join(", ")}.`
     : "The preview could not be analyzed, so this match uses catalog signals only.";
   const familyLine = sharedFamilies.length
     ? `It stays in the same sound family: ${sharedFamilies.join(", ")}.`
@@ -1052,17 +1055,17 @@ function vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags = [], sh
 
 function inferMood(track, features = null) {
   if (features) {
-    if (features.energy > 0.78 && features.pulse > 0.62) return "energetic";
-    if (features.pulse > 0.58 && features.warmth > 0.5 && features.energy < 0.72) return "groovy";
-    if (features.energy > 0.62 && features.brightness > 0.66) return "euphoric";
-    if (features.dynamics > 0.6 && features.energy > 0.6 && features.brightness < 0.52) return "aggressive";
-    if (features.energy < 0.32 && features.pulse < 0.4) return "calm";
-    if (features.energy < 0.42 && features.brightness < 0.44) return "melancholic";
+    if (features.pulse > 0.7 && features.punch > 0.45) return "energetic";
+    if (features.pulse > 0.58 && features.warmth > 0.5) return "groovy";
+    if (features.pulse > 0.56 && features.brightness > 0.66) return "euphoric";
+    if (features.dynamics > 0.6 && features.punch > 0.45 && features.brightness < 0.52) return "aggressive";
+    if (features.pulse < 0.4 && features.punch < 0.34) return "calm";
+    if (features.pulse < 0.48 && features.brightness < 0.44) return "melancholic";
     if (features.brightness < 0.34 && features.dynamics > 0.38) return "dark";
     if (features.warmth > 0.62 && features.pulse < 0.55) return "sensual";
-    if (features.warmth > 0.56 && features.energy < 0.62) return "romantic";
+    if (features.warmth > 0.56 && features.pulse < 0.62) return "romantic";
     if (features.brightness < 0.44 && features.pulse < 0.45) return "dreamy";
-    if (features.brightness > 0.64 && features.energy > 0.42) return "bright";
+    if (features.brightness > 0.64 && features.treble > 0.42) return "bright";
   }
 
   const haystack = normalize(
@@ -1319,12 +1322,12 @@ function updateSimilarityLabel() {
 function vibeBars(track) {
   const features = track.audioFeatures || fallbackFeatures(track.profile || vibeProfile(track));
   const meters = [
-    ["Energy", features.energy],
     ["Pulse", features.pulse],
     ["Bass", features.bass ?? features.warmth],
     ["Treble", features.treble ?? features.brightness],
-    ["Brightness", features.brightness],
-    ["Warmth", features.warmth],
+    ["Punch", features.punch ?? features.dynamics],
+    ["Dynamics", features.dynamics],
+    ["Texture", features.structureMotion ?? features.warmth],
   ];
 
   return meters
@@ -1343,12 +1346,12 @@ function vibeBars(track) {
 
 function fallbackFeatures(profile) {
   const moodValues = {
-    melancholic: { energy: 0.34, pulse: 0.34, bass: 0.46, treble: 0.32, brightness: 0.28, warmth: 0.52 },
-    romantic: { energy: 0.46, pulse: 0.42, bass: 0.5, treble: 0.36, brightness: 0.48, warmth: 0.72 },
-    energetic: { energy: 0.82, pulse: 0.76, bass: 0.58, treble: 0.58, brightness: 0.62, warmth: 0.48 },
-    calm: { energy: 0.26, pulse: 0.24, bass: 0.4, treble: 0.28, brightness: 0.44, warmth: 0.62 },
-    dark: { energy: 0.48, pulse: 0.42, bass: 0.64, treble: 0.24, brightness: 0.22, warmth: 0.34 },
-    bright: { energy: 0.62, pulse: 0.58, bass: 0.42, treble: 0.68, brightness: 0.82, warmth: 0.56 },
+    melancholic: { pulse: 0.34, bass: 0.46, treble: 0.32, punch: 0.3, dynamics: 0.42, brightness: 0.28, warmth: 0.52, structureMotion: 0.35 },
+    romantic: { pulse: 0.42, bass: 0.5, treble: 0.36, punch: 0.34, dynamics: 0.38, brightness: 0.48, warmth: 0.72, structureMotion: 0.42 },
+    energetic: { pulse: 0.76, bass: 0.58, treble: 0.58, punch: 0.62, dynamics: 0.6, brightness: 0.62, warmth: 0.48, structureMotion: 0.58 },
+    calm: { pulse: 0.24, bass: 0.4, treble: 0.28, punch: 0.22, dynamics: 0.26, brightness: 0.44, warmth: 0.62, structureMotion: 0.22 },
+    dark: { pulse: 0.42, bass: 0.64, treble: 0.24, punch: 0.46, dynamics: 0.5, brightness: 0.22, warmth: 0.34, structureMotion: 0.48 },
+    bright: { pulse: 0.58, bass: 0.42, treble: 0.68, punch: 0.44, dynamics: 0.42, brightness: 0.82, warmth: 0.56, structureMotion: 0.4 },
   };
 
   return moodValues[profile.mood] || moodValues.calm;
@@ -1451,6 +1454,7 @@ function extractAudioFeatures(samples, sampleRate) {
   const zeroCrossings = [];
   const lowEnergies = [];
   const highEnergies = [];
+  const onsets = [];
   let previousFrameEnergy = 0;
   let onsetEnergy = 0;
   let totalAbs = 0;
@@ -1494,6 +1498,7 @@ function extractAudioFeatures(samples, sampleRate) {
 
     if (rms > previousFrameEnergy * 1.24 && rms > 0.018) {
       onsetEnergy++;
+      onsets.push(energies.length);
     }
     previousFrameEnergy = rms;
   }
@@ -1510,9 +1515,12 @@ function extractAudioFeatures(samples, sampleRate) {
   const bass = clamp(avgLow / Math.max(avgEnergy, 0.001) * 0.82, 0, 1);
   const treble = clamp(avgHigh / Math.max(avgEnergy, 0.001) * 0.28, 0, 1);
   const punch = clamp(lowStd / Math.max(avgLow, 0.001), 0, 1);
+  const pulseRegularity = onsetRegularity(onsets);
+  const structureMotion = sectionMotion(energies);
+  const motifRepetition = repetitionScore(energies);
+  const vocalPresence = clamp((1 - bass) * 0.32 + warmth * 0.34 + brightness * 0.18 + treble * 0.16, 0, 1);
 
   return {
-    energy: clamp(avgEnergy * 7, 0, 1),
     brightness,
     pulse,
     dynamics,
@@ -1520,6 +1528,10 @@ function extractAudioFeatures(samples, sampleRate) {
     bass,
     treble,
     punch,
+    pulseRegularity,
+    structureMotion,
+    motifRepetition,
+    vocalPresence,
     loudness: clamp((totalAbs / Math.max(energies.length, 1)) * 8, 0, 1),
     sampleRate,
   };
@@ -1531,47 +1543,101 @@ function compareAudioFeatures(seedFeatures, trackFeatures) {
       available: false,
       score: 0,
       reason: "catalog similarity",
+      criteria: [],
     };
   }
 
-  const weights = {
-    energy: 0.18,
-    pulse: 0.2,
-    bass: 0.18,
-    treble: 0.16,
-    punch: 0.14,
-    brightness: 0.08,
-    dynamics: 0.04,
-    warmth: 0.02,
-  };
-  let distance = 0;
-
-  for (const [key, weight] of Object.entries(weights)) {
-    distance += Math.abs(seedFeatures[key] - trackFeatures[key]) * weight;
-  }
-
-  const closest = Object.keys(weights).sort((a, b) => {
-    const aDiff = Math.abs(seedFeatures[a] - trackFeatures[a]);
-    const bDiff = Math.abs(seedFeatures[b] - trackFeatures[b]);
-    return aDiff - bDiff;
-  })[0];
-
-  const labels = {
-    energy: "energy",
-    brightness: "brightness",
-    pulse: "pulse",
-    bass: "low-end weight",
-    treble: "high-end sharpness",
-    punch: "beat punch",
-    dynamics: "dynamic movement",
-    warmth: "warmth",
-  };
+  const criteria = audioCriteria(seedFeatures, trackFeatures);
+  const score = criteria.reduce((sum, criterion) => sum + criterion.score * criterion.weight, 0);
+  const strongest = [...criteria].sort((a, b) => b.score - a.score)[0];
 
   return {
     available: true,
-    score: clamp(1 - distance * 1.35, 0, 1),
-    reason: `similar ${labels[closest]}`,
+    score: clamp(score, 0, 1),
+    reason: `similar ${strongest.label}`,
+    criteria: criteria.sort((a, b) => b.score - a.score),
   };
+}
+
+function audioCriteria(seed, track) {
+  return [
+    {
+      key: "tonalityHarmony",
+      label: "tonality/harmony color",
+      weight: 0.11,
+      score: closeness(seed.warmth, track.warmth, 1.05) * 0.55 + closeness(seed.brightness, track.brightness, 1.05) * 0.45,
+    },
+    {
+      key: "bpmRhythm",
+      label: "BPM and rhythm",
+      weight: 0.16,
+      score: closeness(seed.pulse, track.pulse, 1.25),
+    },
+    {
+      key: "drumsPercussion",
+      label: "drum/percussion pattern",
+      weight: 0.14,
+      score: closeness(seed.pulse, track.pulse, 1.1) * 0.45 + closeness(seed.punch, track.punch, 1.15) * 0.55,
+    },
+    {
+      key: "timbre",
+      label: "timbre",
+      weight: 0.12,
+      score: closeness(seed.bass, track.bass, 1.1) * 0.35 + closeness(seed.treble, track.treble, 1.1) * 0.35 + closeness(seed.warmth, track.warmth, 1) * 0.3,
+    },
+    {
+      key: "textureProduction",
+      label: "texture/production",
+      weight: 0.1,
+      score: closeness(seed.dynamics, track.dynamics, 1.1) * 0.35 + closeness(seed.brightness, track.brightness, 1) * 0.3 + closeness(seed.treble, track.treble, 1) * 0.35,
+    },
+    {
+      key: "structure",
+      label: "structure",
+      weight: 0.08,
+      score: closeness(seed.structureMotion, track.structureMotion, 1.15) * 0.55 + closeness(seed.dynamics, track.dynamics, 1) * 0.45,
+    },
+    {
+      key: "melody",
+      label: "melodic contour",
+      weight: 0.08,
+      score: closeness(seed.brightness, track.brightness, 0.9) * 0.45 + closeness(seed.treble, track.treble, 0.9) * 0.35 + closeness(seed.warmth, track.warmth, 0.8) * 0.2,
+    },
+    {
+      key: "emotionalEnergy",
+      label: "emotional energy",
+      weight: 0.09,
+      score: closeness(seed.pulse, track.pulse, 1) * 0.3 + closeness(seed.dynamics, track.dynamics, 1) * 0.3 + closeness(seed.warmth, track.warmth, 1) * 0.4,
+    },
+    {
+      key: "dynamics",
+      label: "dynamics",
+      weight: 0.07,
+      score: closeness(seed.dynamics, track.dynamics, 1.2),
+    },
+    {
+      key: "vocalStyle",
+      label: "vocal style",
+      weight: 0.06,
+      score: closeness(seed.vocalPresence, track.vocalPresence, 1) * 0.5 + closeness(seed.treble, track.treble, 0.85) * 0.25 + closeness(seed.warmth, track.warmth, 0.85) * 0.25,
+    },
+    {
+      key: "frequencyRange",
+      label: "dominant frequency range",
+      weight: 0.12,
+      score: closeness(seed.bass, track.bass, 1.2) * 0.45 + closeness(seed.treble, track.treble, 1.2) * 0.45 + closeness(seed.brightness, track.brightness, 0.8) * 0.1,
+    },
+    {
+      key: "repetitiveMotifs",
+      label: "repetitive motifs",
+      weight: 0.07,
+      score: closeness(seed.motifRepetition, track.motifRepetition, 1.2) * 0.6 + closeness(seed.pulseRegularity, track.pulseRegularity, 1.1) * 0.4,
+    },
+  ];
+}
+
+function closeness(first = 0, second = 0, sharpness = 1) {
+  return clamp(1 - Math.abs(first - second) * sharpness, 0, 1);
 }
 
 function average(values) {
@@ -1583,6 +1649,41 @@ function standardDeviation(values, avg) {
   if (!values.length) return 0;
   const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length;
   return Math.sqrt(variance);
+}
+
+function onsetRegularity(onsets) {
+  if (onsets.length < 3) return 0;
+  const gaps = onsets.slice(1).map((onset, index) => onset - onsets[index]);
+  const avg = average(gaps);
+  const std = standardDeviation(gaps, avg);
+  return clamp(1 - std / Math.max(avg, 1), 0, 1);
+}
+
+function sectionMotion(values) {
+  if (values.length < 8) return 0;
+  const chunkSize = Math.max(4, Math.floor(values.length / 6));
+  const chunks = [];
+
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(average(values.slice(index, index + chunkSize)));
+  }
+
+  return clamp(standardDeviation(chunks, average(chunks)) / Math.max(average(values), 0.001), 0, 1);
+}
+
+function repetitionScore(values) {
+  if (values.length < 16) return 0;
+  const normalized = values.map((value) => (value > average(values) ? 1 : 0)).join("");
+  const motifSize = 8;
+  const motifs = new Map();
+
+  for (let index = 0; index + motifSize <= normalized.length; index += motifSize) {
+    const motif = normalized.slice(index, index + motifSize);
+    motifs.set(motif, (motifs.get(motif) || 0) + 1);
+  }
+
+  const mostCommon = Math.max(...motifs.values());
+  return clamp(mostCommon / Math.max(motifs.size, 1), 0, 1);
 }
 
 function clamp(value, min, max) {

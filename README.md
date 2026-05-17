@@ -12,8 +12,9 @@ It does not need a backend, manual database, Java, Node, or API key.
   versions.
 - The app searches candidates by genre and vibe hints.
 - Recommendations are ranked by audio-preview similarity when iTunes provides a
-  preview, using energy, brightness, pulse, dynamics, warmth, nearby sound,
-  pacing, and texture.
+  preview, using tonality/harmony color, BPM/rhythm, percussion pattern, timbre,
+  texture/production, structure, melodic contour, emotional energy, dynamics,
+  vocal style, dominant frequency range, and repetitive motifs.
 - The final list is diversified so the results do not all repeat the same artist
   or the exact same vibe profile.
 - Users can adjust how close the match should be, explore by category, ask for a
@@ -27,7 +28,7 @@ It does not need a backend, manual database, Java, Node, or API key.
   strong.
 - Song-based recommendations stay close to the reference by comparing audio
   preview features such as beat pulse, bass weight, treble/high-end sharpness,
-  punch, energy, brightness, dynamics, and multiple shared vibes. Category
+  punch, production texture, dynamics, and multiple shared vibes. Category
   exploration can still use deep-cut and emerging-artist terms for broader
   discovery.
 - The browser keeps a local cache for 24 hours to avoid repeated calls.
