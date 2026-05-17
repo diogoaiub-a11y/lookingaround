@@ -2,14 +2,14 @@ module.exports = async function handler(request, response) {
   const track = request.query.track;
   const artist = request.query.artist;
 
-  if (!track || !artist) {
-    response.status(400).json({ error: "track and artist are required" });
+  if (!track) {
+    response.status(400).json({ error: "track is required" });
     return;
   }
 
   try {
-    const query = `track:"${track}" artist:"${artist}"`;
-    const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=8`;
+    const query = artist ? `track:"${track}" artist:"${artist}"` : track;
+    const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=12`;
     const deezerResponse = await fetch(url, {
       headers: {
         "User-Agent": "VibingEcho/1.0",
@@ -32,7 +32,7 @@ module.exports = async function handler(request, response) {
         item,
         score:
           similarity(normalizedTrack, normalize(item.title_short || item.title)) * 70 +
-          similarity(normalizedArtist, normalize(item.artist?.name)) * 55 -
+          (artist ? similarity(normalizedArtist, normalize(item.artist?.name)) * 55 : 20) -
           index,
       }))
       .sort((a, b) => b.score - a.score)[0]?.item;
