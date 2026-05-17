@@ -19,14 +19,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-deezer-main-v31";
+const APP_VERSION = "vibingecho-deezer-main-v32";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-deezer-cache-v31";
+const CACHE_KEY = "vibingecho-deezer-cache-v32";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -401,9 +401,10 @@ async function deezerCandidates(seed) {
       const tracks = await searchDeezerTracks(query, 28);
       return tracks.map((track) => ({
         ...track,
-        tags: [...new Set([...(track.tags || []), ...queryVibes, ...seedVibes])].slice(0, 24),
+        tags: [...new Set([...(track.tags || []), ...queryVibes, ...seedVibes, languageTag(seed)])].filter(Boolean).slice(0, 24),
         candidateQuery: query,
         candidateSpecificity: queryData.specificity || querySpecificity(query),
+        seedLanguage: detectTrackLanguage(seed),
       }));
     }),
   );
@@ -585,12 +586,14 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
     ...track,
     openMusic: track.openMusic || (await enrichOpenMusic(track)),
   }));
+  const seedLanguage = detectTrackLanguage(seed);
 
   const ranked = enrichedTracks
     .filter((track) => track.trackId !== seed.trackId)
     .map((track, index) => {
       const comparison = compareOpenAudio(seedOpen, track.openMusic, index);
-      const score = applyStrictness(comparison.score, similarity, comparison.acousticLevel);
+      const languageScore = languageMatchScore(seedLanguage, detectTrackLanguage(track));
+      const score = applyStrictness(clamp(comparison.score + languageScore, 0, 0.98), similarity, comparison.acousticLevel);
       const tags = track.openMusic?.tags || [];
       const moodValue = cleanVibeLabel(selectedMood || inferMoodFromOpenData(track.openMusic) || comparison.mood);
 
@@ -601,7 +604,10 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         mood: moodValue,
         tags,
         reasons: comparison.criteria.slice(0, 3).map((item) => item.label),
-        criterionMatches: comparison.criteria,
+        criterionMatches: [
+          languageCriterion(seedLanguage, track),
+          ...comparison.criteria,
+        ].filter(Boolean),
         profile: {
           mood: moodValue,
           pace: comparison.pace || "open",
@@ -1122,8 +1128,9 @@ function candidateRelevantToSeed(seed, track) {
   const queryScore = textSimilarity(track.candidateQuery || "", trackText);
   const sameArtist = seedArtist && trackArtist && seedArtist === trackArtist;
   const specificity = track.candidateSpecificity || 0;
+  const languageScore = languageMatchScore(detectTrackLanguage(seed), detectTrackLanguage(track));
 
-  return sameArtist || tagScore >= 0.18 || textScore >= 0.1 || (specificity >= 0.75 && queryScore >= 0.12);
+  return sameArtist || languageScore >= 0.08 || tagScore >= 0.18 || textScore >= 0.1 || (specificity >= 0.75 && queryScore >= 0.12);
 }
 
 function querySpecificity(query) {
@@ -1134,6 +1141,62 @@ function querySpecificity(query) {
 
 function genericQueryTerm(value) {
   return /^(pop|rock|music|song|track|hits?|best|top|official|similar|catalog|vibe|dance|rap|hip|hop|indie|latin|r b|rb)$/.test(normalize(value));
+}
+
+function detectTrackLanguage(track) {
+  const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName} ${(track.tags || []).join(" ")}`);
+  const ptWords = ["ceu", "azul", "voce", "pra", "pro", "amor", "saudade", "vida", "minha", "meu", "nao", "mais", "bem", "quando", "tudo", "tempo", "casa", "mar", "dia", "noite", "brasil"];
+  const esWords = ["que", "amor", "vida", "corazon", "cuando", "quiero", "noche", "baila", "contigo", "hasta", "siempre", "sin", "para", "como"];
+  const enWords = ["the", "you", "again", "love", "see", "blue", "night", "heart", "baby", "dream", "never", "forever", "with", "without"];
+  const artistHints = [
+    [/charlie brown|skank|legiao urbana|cassia eller|jorge ben|caetano|gilberto gil|anavitoria|maneva|natiruts|engenheiros|raimundos|marisa monte|tribalistas|o rappa|capital inicial/, "pt"],
+    [/wiz khalifa|charlie puth|taylor swift|billie eilish|michael jackson|weeknd|queen|nirvana|coldplay|adele|bruno mars|beyonce|rihanna/, "en"],
+    [/bad bunny|shakira|rosalia|maluma|karol g|enrique iglesias|rauw alejandro|mana|juanes/, "es"],
+  ];
+
+  for (const [pattern, language] of artistHints) {
+    if (pattern.test(text)) return language;
+  }
+
+  const pt = wordHits(text, ptWords);
+  const es = wordHits(text, esWords);
+  const en = wordHits(text, enWords);
+  const best = Math.max(pt, es, en);
+  if (best === 0) return "unknown";
+  if (best === pt && pt >= es && pt >= en) return "pt";
+  if (best === es && es >= pt && es >= en) return "es";
+  return "en";
+}
+
+function wordHits(text, words) {
+  return words.reduce((count, word) => count + (new RegExp(`\\b${word}\\b`).test(text) ? 1 : 0), 0);
+}
+
+function languageMatchScore(seedLanguage, candidateLanguage) {
+  if (!seedLanguage || seedLanguage === "unknown" || candidateLanguage === "unknown") return 0;
+  return seedLanguage === candidateLanguage ? 0.12 : -0.16;
+}
+
+function languageCriterion(seedLanguage, track) {
+  if (!seedLanguage || seedLanguage === "unknown") return null;
+  const candidateLanguage = detectTrackLanguage(track);
+  if (candidateLanguage === "unknown") return null;
+  return criterion(
+    "Same language",
+    seedLanguage === candidateLanguage ? 1 : 0,
+    true,
+    `${languageName(candidateLanguage)} catalog signal`,
+    0.96,
+  );
+}
+
+function languageTag(track) {
+  const language = detectTrackLanguage(track);
+  return language === "unknown" ? "" : `language:${language}`;
+}
+
+function languageName(language) {
+  return { pt: "Portuguese", en: "English", es: "Spanish" }[language] || "Unknown";
 }
 
 function knownTrackProfile(track) {
