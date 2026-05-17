@@ -619,8 +619,12 @@ function seedScore(term, track) {
   const normalizedTitle = normalize(track.trackName);
   const normalizedArtist = normalize(track.artistName);
   const normalizedAlbum = normalize(track.collectionName);
+  const titleAndArtist = normalize(`${track.trackName} ${track.artistName}`);
+  const artistAndTitle = normalize(`${track.artistName} ${track.trackName}`);
   const searchRank = track.searchRank || 0;
   let score = 0;
+  if (titleAndArtist === normalizedTerm || artistAndTitle === normalizedTerm) score += 720;
+  if (titleAndArtist.includes(normalizedTerm) || artistAndTitle.includes(normalizedTerm)) score += 220;
   if (normalizedTitle === normalizedTerm) score += 520;
   if (normalizedTitle.startsWith(normalizedTerm)) score += 120;
   if (normalizedTitle.includes(normalizedTerm)) score += 80;
