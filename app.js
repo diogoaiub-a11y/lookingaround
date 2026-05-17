@@ -16,11 +16,11 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-tags-v7";
+const APP_VERSION = "vibingecho-discovery-v8";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v7";
+const CACHE_KEY = "vibingecho-cache-v8";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -127,6 +127,30 @@ const globalArtistBoosts = new Map([
   ["radiohead", 70],
   ["coldplay", 70],
   ["lady gaga", 70],
+]);
+
+const mainstreamArtists = new Set([
+  "michael jackson",
+  "the beatles",
+  "queen",
+  "madonna",
+  "prince",
+  "beyonce",
+  "taylor swift",
+  "rihanna",
+  "drake",
+  "the weeknd",
+  "billie eilish",
+  "bruno mars",
+  "adele",
+  "nirvana",
+  "coldplay",
+  "lady gaga",
+  "dua lipa",
+  "ed sheeran",
+  "ariana grande",
+  "justin bieber",
+  "post malone",
 ]);
 
 const knownOriginals = new Map([
@@ -518,6 +542,8 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         score -= 35;
       }
 
+      score += discoveryScore(track, tags);
+
       return {
         ...track,
         score: Math.min(score, 99),
@@ -546,21 +572,28 @@ function diversifyTracks(tracks, limit, options = {}) {
   const selected = [];
   const profileCount = new Map();
   const artistCount = new Map();
+  const tagCount = new Map();
   const strict = options.strict ?? false;
 
-  for (const track of tracks) {
+  for (const track of [...tracks].sort((a, b) => finalDiscoverySort(b) - finalDiscoverySort(a))) {
     const profileKey = `${track.profile.mood}-${track.profile.pace}-${track.profile.texture}`;
     const artistKey = normalize(track.artistName);
     const profileUses = profileCount.get(profileKey) || 0;
     const artistUses = artistCount.get(artistKey) || 0;
+    const saturatedTags = (track.tags || []).filter((tag) => (tagCount.get(tag) || 0) >= 3).length;
 
-    if (profileUses >= (strict ? 1 : 2) || artistUses >= (strict ? 1 : 2)) {
+    if (
+      profileUses >= (strict ? 1 : 2) ||
+      artistUses >= 1 ||
+      saturatedTags >= (strict ? 1 : 3)
+    ) {
       continue;
     }
 
     selected.push(track);
     profileCount.set(profileKey, profileUses + 1);
     artistCount.set(artistKey, artistUses + 1);
+    (track.tags || []).forEach((tag) => tagCount.set(tag, (tagCount.get(tag) || 0) + 1));
 
     if (selected.length === limit) {
       return selected;
@@ -621,7 +654,9 @@ function prioritizeCandidatePool(seed, tracks) {
       if (track.previewUrl) priority += 80;
       if (genre === seedGenre) priority += 35;
       if (genreFamily(seedGenre).some((term) => genre.includes(normalize(term)))) priority += 20;
-      if (artist === seedArtist) priority += 12;
+      if (artist === seedArtist) priority -= 18;
+      if (mainstreamArtists.has(artist)) priority -= 20;
+      priority += midRankDiscoveryBonus(index);
       if (isLowQualityVariant(track)) priority -= 140;
 
       return { ...track, candidatePriority: priority };
@@ -642,6 +677,8 @@ function prioritizeCategoryPool(category, tracks) {
       if (family.some((term) => genre.includes(normalize(term)) || text.includes(normalize(term)))) {
         priority += 45;
       }
+      if (mainstreamArtists.has(normalize(track.artistName))) priority -= 24;
+      priority += midRankDiscoveryBonus(index);
       if (isLowQualityVariant(track)) priority -= 120;
 
       return { ...track, candidatePriority: priority };
@@ -676,6 +713,7 @@ function rankCategoryTracks(category, tracks, selectedMood, similarity) {
       if (isLowQualityVariant(track)) {
         score -= 35;
       }
+      score += discoveryScore(track, tags);
 
       return {
         ...track,
@@ -699,8 +737,11 @@ function categoryAnalysis(track, categoryInfo, profile, sharedTags) {
   const tagLine = sharedTags.length
     ? `Shared tags: ${sharedTags.slice(0, 4).join(", ")}.`
     : "It connects through the broader category mood.";
+  const discoveryLine = mainstreamArtists.has(normalize(track.artistName))
+    ? "It stays because it strongly fits the category."
+    : "It is prioritized as a less obvious discovery.";
 
-  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} ${tagLine} This makes it fit the ${categoryInfo.label} lane while keeping its own identity.`;
+  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} ${tagLine} ${discoveryLine} This makes it fit the ${categoryInfo.label} lane while keeping its own identity.`;
 }
 
 function categoryData(category) {
@@ -754,6 +795,37 @@ function trackTags(track, profile = vibeProfile(track, track.audioFeatures)) {
 function intersection(first, second) {
   const secondSet = new Set(second);
   return first.filter((item) => secondSet.has(item));
+}
+
+function discoveryScore(track, tags = []) {
+  const artist = normalize(track.artistName);
+  const searchRank = track.searchRank || 0;
+  let score = 0;
+
+  if (!mainstreamArtists.has(artist)) score += 24;
+  else score -= 18;
+
+  if (track.previewUrl) score += 10;
+  if (tags.length >= 8) score += 12;
+  if (searchRank > 0 && searchRank < 96) score += 14;
+  if (searchRank >= 120) score -= 18;
+
+  const collection = normalize(track.collectionName);
+  if (/greatest hits|the best|essential|collection|karaoke|tribute/.test(collection)) {
+    score -= 20;
+  }
+
+  return score;
+}
+
+function midRankDiscoveryBonus(index) {
+  if (index >= 8 && index <= 32) return 22;
+  if (index > 32) return 10;
+  return -8;
+}
+
+function finalDiscoverySort(track) {
+  return (track.score || 0) + discoveryScore(track, track.tags || []) * 0.7;
 }
 
 function isLowQualityVariant(track) {
@@ -822,8 +894,11 @@ function vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags = []) {
   const tagLine = sharedTags.length
     ? `It also shares ${sharedTags.slice(0, 5).join(", ")} categories.`
     : "It has fewer category overlaps, so the match leans more on sound and mood.";
+  const discoveryLine = mainstreamArtists.has(normalize(track.artistName))
+    ? "It is a more familiar pick, so it only stays when the match is strong."
+    : "It gets a discovery boost for being a less obvious pick.";
 
-  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} ${tagLine} In context, ${genre} keeps it distinct instead of just repeating the same match. ${contrast}`;
+  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} ${tagLine} ${discoveryLine} In context, ${genre} keeps it distinct instead of just repeating the same match. ${contrast}`;
 }
 
 function inferMood(track, features = null) {

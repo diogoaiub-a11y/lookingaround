@@ -22,6 +22,9 @@ It does not need a backend, manual database, Java, Node, or API key.
 - Songs receive multiple tags at once, such as genre family, mood, texture,
   pace, era, and audio-feel tags. Recommendations connect songs with more
   overlapping tags.
+- Discovery is prioritized: less obvious artists and mid-ranked iTunes results
+  receive a boost, while very mainstream artists are kept only when the match is
+  strong.
 - The browser keeps a local cache for 24 hours to avoid repeated calls.
 
 ## Deploy to Vercel
