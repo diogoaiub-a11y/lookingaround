@@ -15,16 +15,19 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-open-vibes-v24";
+const APP_VERSION = "vibingecho-open-vibes-v26";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
-const CACHE_KEY = "vibingecho-open-cache-v24";
+const MEDIA_API_URL = "/api/deezer";
+const CACHE_KEY = "vibingecho-open-cache-v26";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
+const RECOMMENDATION_LIMIT = 24;
+const CATEGORY_LIMIT = 24;
 
 const currentTracks = new Map();
 
@@ -264,6 +267,7 @@ async function runFromSeed(seed) {
 
   try {
     seed.openMusic = seed.openMusic || (await enrichOpenMusic(seed));
+    seed.media = seed.media || (await enrichMedia(seed));
     renderSeed(seed);
     setStatus("Finding ListenBrainz neighbors, then comparing AcousticBrainz sound criteria...");
 
@@ -301,6 +305,7 @@ async function runCategory(category) {
     const enriched = await mapWithConcurrency(candidates.slice(0, 36), 5, async (track) => ({
       ...track,
       openMusic: await enrichOpenMusic(track),
+      media: await enrichMedia(track),
     }));
     const recommendations = rankCategoryTracks(category, enriched);
 
@@ -347,7 +352,7 @@ async function collectCandidates(seed) {
   }
 
   const listenBrainzTracks = dedupeTracks([...known.values()]);
-  if (listenBrainzTracks.length >= 12) return listenBrainzTracks;
+  if (listenBrainzTracks.length >= RECOMMENDATION_LIMIT) return listenBrainzTracks;
 
   const fallbackTracks = await fallbackTracksPromise;
   return dedupeTracks([...listenBrainzTracks, ...fallbackTracks]);
@@ -384,7 +389,7 @@ async function fallbackCandidates(seed) {
   return dedupeTracks(batches.flat())
     .filter((track) => track.trackId !== seed.trackId)
     .filter((track) => !isLowQualityVariant(track))
-    .slice(0, 42);
+    .slice(0, 72);
 }
 
 async function enrichOpenMusic(track) {
@@ -417,12 +422,55 @@ async function enrichOpenMusic(track) {
   return enriched;
 }
 
+async function enrichMedia(track) {
+  const cacheKey = `media:${track.artistName}:${track.trackName}`;
+  const cached = readCache(cacheKey);
+  if (cached) return cached;
+
+  const media =
+    (await fetchJsonSafe(
+      `${MEDIA_API_URL}?track=${encodeURIComponent(track.trackName)}&artist=${encodeURIComponent(track.artistName)}`,
+    )) || {};
+  const directDeezer = normalizeDeezerMedia(media, track);
+  const enriched = {
+    coverUrl: directDeezer.coverUrl || media.coverUrl || coverArtArchiveUrl(track) || "",
+    previewUrl: directDeezer.previewUrl || media.previewUrl || "",
+    mediaUrl: directDeezer.mediaUrl || media.deezerUrl || track.trackViewUrl,
+    source: directDeezer.previewUrl || media.previewUrl || media.coverUrl ? "Deezer preview" : "MusicBrainz cover fallback",
+  };
+
+  writeCache(cacheKey, enriched);
+  return enriched;
+}
+
+function normalizeDeezerMedia(media, track) {
+  const items = media?.data || [];
+  if (!Array.isArray(items) || !items.length) return {};
+
+  const best = items
+    .map((item, index) => ({
+      item,
+      score:
+        textSimilarity(track.trackName, item.title_short || item.title) * 70 +
+        textSimilarity(track.artistName, item.artist?.name) * 55 -
+        index,
+    }))
+    .sort((a, b) => b.score - a.score)[0]?.item;
+
+  return {
+    coverUrl: best?.album?.cover_xl || best?.album?.cover_big || best?.album?.cover_medium || "",
+    previewUrl: best?.preview || "",
+    mediaUrl: best?.link || "",
+  };
+}
+
 async function rankTracks(seed, tracks, mood, similarity = 0.72) {
   const seedOpen = seed.openMusic || (await enrichOpenMusic(seed));
   const selectedMood = mood === "auto" ? null : mood;
   const enrichedTracks = await mapWithConcurrency(tracks.slice(0, 50), 5, async (track) => ({
     ...track,
     openMusic: track.openMusic || (await enrichOpenMusic(track)),
+    media: track.media || (await enrichMedia(track)),
   }));
 
   const ranked = enrichedTracks
@@ -454,7 +502,7 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
     .filter((track) => track.essencePassed)
     .sort((a, b) => b.score - a.score);
 
-  return diversifyTracks(ranked, 12);
+  return diversifyTracks(ranked, RECOMMENDATION_LIMIT);
 }
 
 function rankCategoryTracks(category, tracks) {
@@ -486,7 +534,7 @@ function rankCategoryTracks(category, tracks) {
     })
     .filter((track) => track.score >= 52)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 12);
+    .slice(0, CATEGORY_LIMIT);
 }
 
 function compareOpenAudio(seedOpen, trackOpen, index = 0) {
@@ -678,6 +726,7 @@ function normalizeMusicBrainzRecording(recording) {
     releaseDate: recording["first-release-date"] || release.date || "",
     trackViewUrl: `https://musicbrainz.org/recording/${recording.id}`,
     artworkUrl100: "",
+    releaseMbid: release.id || "",
     tags,
     score: recording.score || 0,
   };
@@ -719,6 +768,7 @@ function normalizeListenBrainzRecording(item) {
     releaseDate: item.release_date || item.date || "",
     trackViewUrl: `https://musicbrainz.org/recording/${id}`,
     artworkUrl100: "",
+    releaseMbid: item.release_mbid || item.release?.mbid || item.release?.id || "",
     tags,
     listenBrainz: item,
   };
@@ -739,6 +789,7 @@ function normalizeSimilarItem(item) {
     releaseDate: "",
     trackViewUrl: `https://musicbrainz.org/recording/${id}`,
     artworkUrl100: "",
+    releaseMbid: item.release_mbid || item.release?.mbid || item.release?.id || "",
     tags: [],
     listenBrainz: item,
   };
@@ -947,6 +998,7 @@ function renderSeed(track) {
       <h3>${escapeHtml(track.trackName)}</h3>
       <p class="artist">${escapeHtml(track.artistName)}</p>
       <p class="why">${escapeHtml(track.collectionName || "Release not listed")} ${year(track.releaseDate) || ""}. ${escapeHtml(acoustic)} Sources: ${escapeHtml(sources)}.</p>
+      ${track.media?.previewUrl ? `<audio controls preload="none" src="${escapeHtml(track.media.previewUrl)}"></audio>` : ""}
       <div class="actions">
         <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">Open in MusicBrainz</a>
       </div>
@@ -978,8 +1030,14 @@ function renderResults(tracks) {
     node.querySelector(".favorite").textContent = isFavorite(track) ? "Saved" : "Save";
     link.href = track.trackViewUrl;
     link.textContent = "Open in MusicBrainz";
-    audio.remove();
-    small.textContent = "Data from MusicBrainz, ListenBrainz, and AcousticBrainz when available.";
+    if (track.media?.previewUrl) {
+      audio.src = track.media.previewUrl;
+    } else {
+      audio.remove();
+    }
+    small.textContent = track.media?.previewUrl
+      ? "Preview and cover from Deezer. Similarity data from MusicBrainz, ListenBrainz, and AcousticBrainz."
+      : "Cover fallback from open music data. Preview unavailable for this track.";
 
     results.appendChild(node);
   });
@@ -1019,10 +1077,19 @@ function criteriaAnalysis(comparison) {
 }
 
 function artwork(track) {
+  if (track.media?.coverUrl) return track.media.coverUrl;
   if (track.artworkUrl100) return track.artworkUrl100;
+  const coverArt = coverArtArchiveUrl(track);
+  if (coverArt) return coverArt;
   const title = encodeURIComponent(track.trackName || "VibingEcho");
   const artist = encodeURIComponent(track.artistName || "Open music");
   return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 300'%3E%3Crect width='300' height='300' fill='%23151418'/%3E%3Ccircle cx='225' cy='72' r='60' fill='%23ff3bd4' opacity='.22'/%3E%3Ccircle cx='85' cy='222' r='88' fill='%23333338'/%3E%3Ctext x='28' y='136' fill='%23ff3bd4' font-family='Arial' font-size='28' font-weight='700'%3EVibingEcho%3C/text%3E%3Ctext x='28' y='174' fill='%23f6edf4' font-family='Arial' font-size='18'%3E${title}%3C/text%3E%3Ctext x='28' y='202' fill='%23bdb5c0' font-family='Arial' font-size='15'%3E${artist}%3C/text%3E%3C/svg%3E`;
+}
+
+function coverArtArchiveUrl(track) {
+  return track.releaseMbid
+    ? `https://coverartarchive.org/release/${encodeURIComponent(track.releaseMbid)}/front-500`
+    : "";
 }
 
 function seedScore(term, track) {
@@ -1052,15 +1119,27 @@ function isLowQualityVariant(track) {
 
 function diversifyTracks(tracks, limit) {
   const selected = [];
-  const artists = new Set();
+  const artistCounts = new Map();
   const titles = new Set();
 
   for (const track of tracks) {
     const artist = normalize(track.artistName);
     const title = normalize(track.trackName);
-    if (artists.has(artist) || titles.has(title)) continue;
+    const artistUses = artistCounts.get(artist) || 0;
+    if (artistUses >= 1 || titles.has(title)) continue;
     selected.push(track);
-    artists.add(artist);
+    artistCounts.set(artist, artistUses + 1);
+    titles.add(title);
+    if (selected.length === limit) return selected;
+  }
+
+  for (const track of tracks) {
+    const artist = normalize(track.artistName);
+    const title = normalize(track.trackName);
+    const artistUses = artistCounts.get(artist) || 0;
+    if (artistUses >= 2 || titles.has(title)) continue;
+    selected.push(track);
+    artistCounts.set(artist, artistUses + 1);
     titles.add(title);
     if (selected.length === limit) return selected;
   }
@@ -1128,6 +1207,20 @@ function vibeTagSimilarity(a, b) {
   const expandedA = expandVibeTags(a);
   const expandedB = expandVibeTags(b);
   return tagSimilarity(expandedA, expandedB);
+}
+
+function textSimilarity(left, right) {
+  const a = normalize(left);
+  const b = normalize(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.82;
+
+  const wordsA = new Set(a.split(" ").filter(Boolean));
+  const wordsB = new Set(b.split(" ").filter(Boolean));
+  let overlap = 0;
+  for (const word of wordsA) if (wordsB.has(word)) overlap += 1;
+  return overlap / Math.max(wordsA.size, wordsB.size, 1);
 }
 
 function expandVibeTags(tags) {
@@ -1267,6 +1360,13 @@ function externalFallbackUrl(url) {
     if (mbid) {
       return `https://labs.api.listenbrainz.org/similar-recordings/json?recording_mbids=${encodeURIComponent(mbid)}&algorithm=session_based_days_7500_session_300_contribution_5_threshold_15_limit_50_skip_30`;
     }
+  }
+
+  if (path === MEDIA_API_URL) {
+    const track = parsed.searchParams.get("track") || "";
+    const artist = parsed.searchParams.get("artist") || "";
+    const query = `track:"${track}" artist:"${artist}"`;
+    return `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=8`;
   }
 
   return null;

@@ -8,6 +8,8 @@ It does not use iTunes anymore.
 - MusicBrainz finds the reference song and public recording metadata.
 - ListenBrainz finds recordings that listeners often connect to the reference.
 - AcousticBrainz refines matches when a recording has audio descriptors.
+- Deezer is used only for cover images and 30-second preview clips when
+  available.
 - Lyrics are not used.
 - Artist, album, era, and popularity are not used as similarity criteria.
 
