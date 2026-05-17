@@ -1,15 +1,14 @@
 # VibingEcho
 
-Static website for recommending similar songs with open music data.
+Static website for recommending similar songs with the Deezer catalog plus optional open-data analysis.
 It does not use iTunes anymore.
 
 ## Data sources
 
-- MusicBrainz finds the reference song and public recording metadata.
-- ListenBrainz finds recordings that listeners often connect to the reference.
-- AcousticBrainz refines matches when a recording has audio descriptors.
-- Deezer is used only for cover images and 30-second preview clips when
-  available.
+- Deezer is the main catalog for real released songs, artists, cover images, and
+  30-second preview clips.
+- MusicBrainz, ListenBrainz, and AcousticBrainz are optional enrichment sources
+  when open-data analysis is available.
 - Lyrics are not used.
 - Artist, album, era, and popularity are not used as similarity criteria.
 

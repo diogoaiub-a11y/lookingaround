@@ -19,14 +19,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-open-vibes-v29";
+const APP_VERSION = "vibingecho-deezer-main-v30";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-open-cache-v29";
+const CACHE_KEY = "vibingecho-deezer-cache-v30";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -242,7 +242,7 @@ renderHistory();
 renderFavorites();
 
 async function runRecommendation(term) {
-  setLoading(true, `Searching MusicBrainz... ${APP_VERSION}`);
+  setLoading(true, `Searching Deezer catalog... ${APP_VERSION}`);
   updateProgress(5, "Starting search");
   seedSection.hidden = true;
   results.innerHTML = "";
@@ -252,7 +252,7 @@ async function runRecommendation(term) {
     const seed = await findSeedTrack(term);
 
     if (!seed) {
-      setStatus("I could not find that song in MusicBrainz. Try writing the song plus artist or band.");
+      setStatus("I could not find that song in Deezer. Try writing the song plus artist or band.");
       updateProgress(0, "Ready", { hidden: true });
       return;
     }
@@ -268,7 +268,7 @@ async function runRecommendation(term) {
 }
 
 async function runFromSeed(seed) {
-  setLoading(true, `Reading open music data... ${APP_VERSION}`);
+  setLoading(true, `Reading catalog data... ${APP_VERSION}`);
   updateProgress(22, "Reading reference data");
   seedSection.hidden = true;
   results.innerHTML = "";
@@ -278,14 +278,14 @@ async function runFromSeed(seed) {
     renderSeed(seed);
     hydrateSeedMedia(seed);
     updateProgress(38, "Collecting similar tracks");
-    setStatus("Finding ListenBrainz neighbors, then comparing AcousticBrainz sound criteria...");
+    setStatus("Finding catalog matches, then comparing vibe criteria...");
 
     const candidates = await collectCandidates(seed);
     updateProgress(58, "Comparing sound criteria");
     const recommendations = await rankTracks(seed, candidates, moodInput.value, similarityValue());
 
     if (!recommendations.length) {
-      setStatus("I found the reference, but ListenBrainz did not return enough open-data neighbors for it.");
+      setStatus("I found the reference, but not enough catalog matches passed the vibe filters.");
       updateProgress(0, "Ready", { hidden: true });
       return;
     }
@@ -294,7 +294,7 @@ async function runFromSeed(seed) {
     renderResults(recommendations);
     const acousticCount = recommendations.filter((track) => hasAcousticData(track.openMusic)).length;
     setStatus(
-      `${APP_VERSION}: selected ${recommendations.length} matches using MusicBrainz + ListenBrainz + ${acousticCount} AcousticBrainz profiles.`,
+      `${APP_VERSION}: selected ${recommendations.length} Deezer catalog matches with ${acousticCount} optional AcousticBrainz profiles.`,
     );
   } catch (error) {
     console.error(error);
@@ -306,7 +306,7 @@ async function runFromSeed(seed) {
 
 async function runCategory(category) {
   const data = categoryData(category);
-  setLoading(true, `Exploring ${data.label} with MusicBrainz... ${APP_VERSION}`);
+  setLoading(true, `Exploring ${data.label} with Deezer... ${APP_VERSION}`);
   updateProgress(8, "Starting category search");
   seedSection.hidden = true;
   seedCard.innerHTML = "";
@@ -314,9 +314,9 @@ async function runCategory(category) {
 
   try {
     updateProgress(28, "Collecting category tracks");
-    const batches = await Promise.all(data.terms.map((term) => searchOpenRecordings(term, 18)));
-    const candidates = dedupeTracks(batches.flat().map(normalizeMusicBrainzRecording).filter(Boolean));
-    updateProgress(52, "Reading open music data");
+    const batches = await Promise.all(data.terms.map((term) => searchDeezerTracks(term, 30)));
+    const candidates = dedupeTracks(batches.flat());
+    updateProgress(52, "Reading catalog data");
     const enriched = await mapWithConcurrency(candidates.slice(0, 60), 8, async (track) => ({
       ...track,
       openMusic: await enrichOpenMusic(track),
@@ -335,23 +335,29 @@ async function runCategory(category) {
 }
 
 async function findSeedTrack(term) {
-  const batches = await Promise.all(
-    seedSearchQueries(term).map((query) => searchOpenRecordings(query, 12)),
-  );
-  const recordings = mergeSearchResults(batches);
-  return recordings
+  const deezerResults = await searchDeezerTracks(term, 25);
+  const deezerSeed = deezerResults.sort((a, b) => seedScore(term, b) - seedScore(term, a))[0];
+  if (deezerSeed) return deezerSeed;
+
+  const batches = await Promise.all(seedSearchQueries(term).map((query) => searchOpenRecordings(query, 12)));
+  return mergeSearchResults(batches)
     .map((recording) => normalizeMusicBrainzRecording(recording))
     .filter(Boolean)
     .sort((a, b) => seedScore(term, b) - seedScore(term, a))[0];
 }
 
 async function collectCandidates(seed) {
+  const deezerTracksPromise = deezerCandidates(seed);
   const mbid = seed.openMusic?.mbid || seed.trackId;
-  const similar = await fetchJsonSafe(`${SIMILARBRAINZ_API_URL}?mbid=${encodeURIComponent(mbid)}`);
+  const similar = isMbid(mbid) ? await fetchJsonSafe(`${SIMILARBRAINZ_API_URL}?mbid=${encodeURIComponent(mbid)}`) : null;
   const mbids = extractSimilarMbids(similar).filter((id) => id && id !== mbid).slice(0, 50);
   const fallbackTracksPromise = fallbackCandidates(seed);
 
-  if (!mbids.length) return fallbackTracksPromise;
+  if (!mbids.length) {
+    const deezerTracks = await deezerTracksPromise;
+    const fallbackTracks = await fallbackTracksPromise;
+    return dedupeTracks([...deezerTracks, ...fallbackTracks]);
+  }
 
   const metadata = await fetchJsonSafe(
     `${LISTENBRAINZ_RECORDINGS_API_URL}?mbids=${encodeURIComponent(mbids.join(","))}`,
@@ -367,10 +373,41 @@ async function collectCandidates(seed) {
   }
 
   const listenBrainzTracks = dedupeTracks([...known.values()]);
-  if (listenBrainzTracks.length >= RECOMMENDATION_LIMIT) return listenBrainzTracks;
+  const deezerTracks = await deezerTracksPromise;
+  if (deezerTracks.length >= RECOMMENDATION_LIMIT) return deezerTracks;
 
   const fallbackTracks = await fallbackTracksPromise;
-  return dedupeTracks([...listenBrainzTracks, ...fallbackTracks]);
+  return dedupeTracks([...deezerTracks, ...listenBrainzTracks, ...fallbackTracks]);
+}
+
+async function searchDeezerTracks(query, limit = 24) {
+  const cacheKey = `deezer-search:${query}:${limit}`;
+  const cached = readCache(cacheKey);
+  if (cached) return cached;
+
+  const data = await fetchJson(`${MEDIA_API_URL}?q=${encodeURIComponent(query)}&limit=${limit}`);
+  const tracks = (data?.data || []).map(normalizeDeezerTrack).filter(Boolean);
+  writeCache(cacheKey, tracks);
+  return tracks;
+}
+
+async function deezerCandidates(seed) {
+  const queries = deezerSearchQueries(seed);
+  const seedVibes = [...new Set([...trackMicroVibes(seed), ...(seed.tags || []), ...(seed.openMusic?.tags || [])])].filter(Boolean);
+  const batches = await Promise.all(
+    queries.map(async (query) => {
+      const queryVibes = [...everyNoiseQueryTags(query), cleanGenreLabel(query)].filter(Boolean);
+      const tracks = await searchDeezerTracks(query, 28);
+      return tracks.map((track) => ({
+        ...track,
+        tags: [...new Set([...(track.tags || []), ...queryVibes, ...seedVibes])].slice(0, 24),
+      }));
+    }),
+  );
+  return dedupeTracks(batches.flat())
+    .filter((track) => track.trackId !== seed.trackId)
+    .filter((track) => !isLowQualityVariant(track))
+    .slice(0, 90);
 }
 
 async function searchOpenRecordings(term, limit = 10) {
@@ -411,6 +448,18 @@ async function enrichOpenMusic(track) {
   const cacheKey = `open:${track.trackId || track.artistName}:${track.trackName}`;
   const cached = readCache(cacheKey);
   if (cached) return cached;
+
+  if (!isMbid(track.trackId)) {
+    const enriched = {
+      mbid: null,
+      musicBrainz: null,
+      acousticBrainz: null,
+      tags: [...new Set([...(track.tags || []), ...trackMicroVibes(track), cleanGenreLabel(track.primaryGenreName)])].filter(Boolean).slice(0, 24),
+      sources: ["Deezer"],
+    };
+    writeCache(cacheKey, enriched);
+    return enriched;
+  }
 
   const mbid = track.trackId;
   const [musicBrainz, acousticBrainz] = await Promise.all([
@@ -492,6 +541,36 @@ function normalizeDeezerMedia(media, track) {
     mediaUrl: best?.link || "",
     title: best?.title_short || best?.title || "",
     artist: best?.artist?.name || "",
+  };
+}
+
+function normalizeDeezerTrack(item) {
+  if (!item?.id || !item?.title) return null;
+  const title = item.title_short || item.title;
+  const artist = item.artist?.name || "Unknown artist";
+  const album = item.album?.title || "";
+
+  return {
+    trackId: `deezer:${item.id}`,
+    deezerId: item.id,
+    trackName: title,
+    artistName: artist,
+    collectionName: album,
+    primaryGenreName: "catalog track",
+    releaseDate: "",
+    trackViewUrl: item.link || "",
+    artworkUrl100: item.album?.cover_medium || item.album?.cover || "",
+    releaseMbid: "",
+    tags: trackMicroVibes({ trackName: title, artistName: artist, collectionName: album, tags: [] }),
+    media: {
+      coverUrl: item.album?.cover_xl || item.album?.cover_big || item.album?.cover_medium || "",
+      previewUrl: item.preview || "",
+      mediaUrl: item.link || "",
+      title,
+      artist,
+      source: "Deezer preview",
+    },
+    score: Number(item.rank || 0),
   };
 }
 
@@ -957,6 +1036,34 @@ function fallbackSearchQueries(seed) {
   return [...new Set([...(knownProfile?.queries || []), ...pairQueries, ...tagQueries, ...genreQueries, ...artistFallback])].slice(0, 14);
 }
 
+function deezerSearchQueries(seed) {
+  const profile = knownTrackProfile(seed);
+  const anchorQueries = (profile?.queries || [])
+    .map(parseAnchorQuery)
+    .filter(Boolean)
+    .map((item) => `${item.title} ${item.artist}`);
+  const vibes = [...new Set([...trackMicroVibes(seed), ...(seed.tags || []), ...(seed.openMusic?.tags || [])])]
+    .map(cleanGenreLabel)
+    .filter(Boolean)
+    .slice(0, 8);
+  const artist = usableArtistName(seed.artistName) ? seed.artistName : displayArtist(seed);
+  const title = seed.trackName || displayTitle(seed);
+  const genre = cleanGenreLabel(seed.primaryGenreName);
+
+  return [
+    ...anchorQueries,
+    `${title} ${artist}`,
+    artist,
+    genre,
+    ...vibes,
+    ...vibes.map((vibe) => `${vibe} ${artist}`),
+  ]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, index, list) => list.indexOf(item) === index)
+    .slice(0, 16);
+}
+
 function trackMicroVibes(track) {
   const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName} ${(track.tags || []).join(" ")}`);
   const tags = new Set();
@@ -981,6 +1088,17 @@ function trackMicroVibes(track) {
   if (text.includes("soul") || text.includes("r b")) ["soul", "warm", "vocal"].forEach((tag) => tags.add(tag));
 
   return [...tags].slice(0, 12);
+}
+
+function everyNoiseQueryTags(query) {
+  const text = normalize(query);
+  const tags = new Set();
+  for (const [vibe, vibeTags] of Object.entries(everyNoiseInspiredVibes)) {
+    if (text.includes(normalize(vibe)) || vibeTags.some((tag) => text.includes(normalize(tag)))) {
+      vibeTags.forEach((tag) => tags.add(tag));
+    }
+  }
+  return [...tags].slice(0, 10);
 }
 
 function knownTrackProfile(track) {
@@ -1031,7 +1149,7 @@ function renderSeed(track) {
       <p class="why">${escapeHtml(track.collectionName || "Release not listed")} ${year(track.releaseDate) || ""}. ${escapeHtml(acoustic)} Sources: ${escapeHtml(sources)}.</p>
       <audio controls preload="none" hidden></audio>
       <div class="actions">
-        <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">Open in MusicBrainz</a>
+        <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">${escapeHtml(linkLabel(track))}</a>
       </div>
     </div>
   `;
@@ -1060,7 +1178,7 @@ function renderResults(tracks) {
     node.querySelector(".vibe-bars").innerHTML = vibeBars(track.criterionMatches || []);
     node.querySelector(".favorite").textContent = isFavorite(track) ? "Saved" : "Save";
     link.href = track.trackViewUrl;
-    link.textContent = "Open in MusicBrainz";
+    link.textContent = linkLabel(track);
     audio.hidden = true;
     small.textContent = "Loading cover and preview...";
 
@@ -1158,6 +1276,7 @@ function artwork(track) {
 }
 
 function coverArtArchiveUrl(track) {
+  if (!isMbid(track.releaseMbid)) return "";
   return track.releaseMbid
     ? `https://coverartarchive.org/release/${encodeURIComponent(track.releaseMbid)}/front-500`
     : "";
@@ -1176,6 +1295,12 @@ function displayArtist(track) {
 function displayArtistLine(track) {
   const genre = cleanGenreLabel(track.primaryGenreName);
   return genre ? `${displayArtist(track)} - ${genre}` : displayArtist(track);
+}
+
+function linkLabel(track) {
+  return track.deezerId || track.media?.mediaUrl?.includes("deezer.com") || track.trackViewUrl?.includes("deezer.com")
+    ? "Open in Deezer"
+    : "Open in MusicBrainz";
 }
 
 function cleanVibeLabel(value) {
@@ -1226,6 +1351,10 @@ function seedScore(term, track) {
 function isLowQualityVariant(track) {
   const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
   return /\b(live|karaoke|tribute|cover|remix|instrumental|made famous by|sped up|slowed|re-recorded|demos?|outtake|rehearsal)\b/.test(text);
+}
+
+function isMbid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ""));
 }
 
 function diversifyTracks(tracks, limit) {
@@ -1474,10 +1603,15 @@ function externalFallbackUrl(url) {
   }
 
   if (path === MEDIA_API_URL) {
+    const query = parsed.searchParams.get("q");
+    if (query) {
+      const limit = parsed.searchParams.get("limit") || "24";
+      return `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`;
+    }
     const track = parsed.searchParams.get("track") || "";
     const artist = parsed.searchParams.get("artist") || "";
-    const query = `track:"${track}" artist:"${artist}"`;
-    return `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=8`;
+    const mediaQuery = artist ? `track:"${track}" artist:"${artist}"` : track;
+    return `https://api.deezer.com/search/track?q=${encodeURIComponent(mediaQuery)}&limit=12`;
   }
 
   return null;
