@@ -15,13 +15,13 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-open-data-v17";
+const APP_VERSION = "vibingecho-open-vibes-v24";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
-const CACHE_KEY = "vibingecho-open-cache-v17";
+const CACHE_KEY = "vibingecho-open-cache-v24";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -98,6 +98,80 @@ const knownOriginals = new Map([
   ["bad romance", "lady gaga"],
   ["blinding lights", "the weeknd"],
 ]);
+
+const knownTrackVibes = [
+  {
+    match: ["beat it", "michael jackson"],
+    tags: ["rock", "funk", "dance-rock", "guitar", "drums", "sharp", "confident", "syncopated", "bright", "tense"],
+    queries: [
+      "recording:\"Let's Dance\" AND artist:\"David Bowie\"",
+      "recording:\"Easy Lover\" AND artist:\"Philip Bailey\"",
+      "recording:\"Sledgehammer\" AND artist:\"Peter Gabriel\"",
+      "recording:\"Black or White\" AND artist:\"Michael Jackson\"",
+      "recording:\"Another One Bites the Dust\" AND artist:\"Queen\"",
+      "recording:\"Walk This Way\" AND artist:\"Aerosmith\"",
+      "recording:\"Superstition\" AND artist:\"Stevie Wonder\"",
+      "recording:\"I Was Made for Lovin' You\" AND artist:\"Kiss\"",
+      "recording:\"The Power of Love\" AND artist:\"Huey Lewis\"",
+      "recording:\"You Give Love a Bad Name\" AND artist:\"Bon Jovi\"",
+      "recording:\"Danger Zone\" AND artist:\"Kenny Loggins\"",
+      "recording:\"Footloose\" AND artist:\"Kenny Loggins\"",
+      "recording:\"Addicted to Love\" AND artist:\"Robert Palmer\"",
+      "recording:\"The Heat Is On\" AND artist:\"Glenn Frey\"",
+      "recording:\"Rebel Yell\" AND artist:\"Billy Idol\"",
+      "recording:\"Owner of a Lonely Heart\" AND artist:\"Yes\"",
+    ],
+  },
+  {
+    match: ["beautiful things", "benson boone"],
+    tags: ["pop rock", "ballad", "dramatic", "raspy vocal", "build-up", "emotional", "explosive chorus", "minor"],
+    queries: [
+      "recording:\"Before You Go\" AND artist:\"Lewis Capaldi\"",
+      "recording:\"Someone You Loved\" AND artist:\"Lewis Capaldi\"",
+      "recording:\"Arcade\" AND artist:\"Duncan Laurence\"",
+    ],
+  },
+  {
+    match: ["bad guy", "billie eilish"],
+    tags: ["minimal", "dark pop", "bass", "whisper vocal", "dry", "playful", "sub bass", "sparse"],
+    queries: [
+      "recording:\"bury a friend\" AND artist:\"Billie Eilish\"",
+      "recording:\"Tennis Court\" AND artist:\"Lorde\"",
+      "recording:\"Genesis\" AND artist:\"Grimes\"",
+    ],
+  },
+  {
+    match: ["smells like teen spirit", "nirvana"],
+    tags: ["grunge", "distorted guitar", "loud", "raw", "angry", "explosive chorus", "rock"],
+    queries: [
+      "recording:\"Cherub Rock\" AND artist:\"The Smashing Pumpkins\"",
+      "recording:\"Plush\" AND artist:\"Stone Temple Pilots\"",
+      "recording:\"Alive\" AND artist:\"Pearl Jam\"",
+    ],
+  },
+  {
+    match: ["blinding lights", "the weeknd"],
+    tags: ["synthpop", "new wave", "night drive", "bright synth", "pulse", "retro", "dance"],
+    queries: [
+      "recording:\"Take On Me\" AND artist:\"a-ha\"",
+      "recording:\"Midnight City\" AND artist:\"M83\"",
+      "recording:\"Sweet Dreams\" AND artist:\"Eurythmics\"",
+    ],
+  },
+];
+
+const everyNoiseInspiredVibes = {
+  rock: ["rock", "guitar", "drums", "raw", "distortion", "anthem"],
+  funk: ["funk", "bass", "groove", "syncopated", "dance", "warm"],
+  "dark-pop": ["dark pop", "bass", "minimal", "shadow", "dry", "tense"],
+  "synth-pop": ["synthpop", "electronic", "new wave", "bright", "pulse", "polished"],
+  "pop-rock": ["pop rock", "guitar", "chorus", "dramatic", "bright", "drums"],
+  "indie-dream": ["indie", "dream pop", "hazy", "reverb", "soft", "nostalgic"],
+  "cinematic-ballad": ["ballad", "cinematic", "build-up", "dramatic", "emotional", "wide"],
+  "club-pulse": ["dance", "house", "club", "pulse", "kick", "bright"],
+  "bass-heavy": ["bass", "trap", "808", "sub bass", "dark", "rhythmic"],
+  "organic-acoustic": ["acoustic", "folk", "organic", "warm", "soft", "intimate"],
+};
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -241,7 +315,10 @@ async function runCategory(category) {
 }
 
 async function findSeedTrack(term) {
-  const recordings = await searchOpenRecordings(term, 10);
+  const batches = await Promise.all(
+    seedSearchQueries(term).map((query) => searchOpenRecordings(query, 12)),
+  );
+  const recordings = mergeSearchResults(batches);
   return recordings
     .map((recording) => normalizeMusicBrainzRecording(recording))
     .filter(Boolean)
@@ -250,10 +327,11 @@ async function findSeedTrack(term) {
 
 async function collectCandidates(seed) {
   const mbid = seed.openMusic?.mbid || seed.trackId;
-  const similar = await fetchJson(`${SIMILARBRAINZ_API_URL}?mbid=${encodeURIComponent(mbid)}`);
+  const similar = await fetchJsonSafe(`${SIMILARBRAINZ_API_URL}?mbid=${encodeURIComponent(mbid)}`);
   const mbids = extractSimilarMbids(similar).filter((id) => id && id !== mbid).slice(0, 50);
+  const fallbackTracksPromise = fallbackCandidates(seed);
 
-  if (!mbids.length) return [];
+  if (!mbids.length) return fallbackTracksPromise;
 
   const metadata = await fetchJsonSafe(
     `${LISTENBRAINZ_RECORDINGS_API_URL}?mbids=${encodeURIComponent(mbids.join(","))}`,
@@ -268,7 +346,11 @@ async function collectCandidates(seed) {
     if (fallback) known.set(id, fallback);
   }
 
-  return dedupeTracks([...known.values()]);
+  const listenBrainzTracks = dedupeTracks([...known.values()]);
+  if (listenBrainzTracks.length >= 12) return listenBrainzTracks;
+
+  const fallbackTracks = await fallbackTracksPromise;
+  return dedupeTracks([...listenBrainzTracks, ...fallbackTracks]);
 }
 
 async function searchOpenRecordings(term, limit = 10) {
@@ -282,6 +364,29 @@ async function searchOpenRecordings(term, limit = 10) {
   return recordings;
 }
 
+async function fallbackCandidates(seed) {
+  const queries = fallbackSearchQueries(seed);
+  const batches = await Promise.all(
+    queries.map(async (query) => {
+      const anchor = parseAnchorQuery(query);
+      const recordings = await searchOpenRecordings(query, anchor ? 5 : 16);
+      const tracks = recordings.map(normalizeMusicBrainzRecording).filter(Boolean);
+
+      if (!anchor) return tracks;
+
+      return tracks
+        .filter((track) => normalize(track.trackName) === normalize(anchor.title))
+        .filter((track) => normalize(track.artistName).includes(normalize(anchor.artist)))
+        .slice(0, 1);
+    }),
+  );
+
+  return dedupeTracks(batches.flat())
+    .filter((track) => track.trackId !== seed.trackId)
+    .filter((track) => !isLowQualityVariant(track))
+    .slice(0, 42);
+}
+
 async function enrichOpenMusic(track) {
   const cacheKey = `open:${track.trackId || track.artistName}:${track.trackName}`;
   const cached = readCache(cacheKey);
@@ -292,16 +397,19 @@ async function enrichOpenMusic(track) {
     fetchJsonSafe(`${MUSICBRAINZ_API_URL}?mbid=${encodeURIComponent(mbid)}`),
     fetchJsonSafe(`${ACOUSTICBRAINZ_API_URL}?mbid=${encodeURIComponent(mbid)}`),
   ]);
+  const normalizedAcoustic = acousticBrainz?.lowlevel || acousticBrainz?.rhythm || acousticBrainz?.tonal
+    ? { lowLevel: acousticBrainz, highLevel: null }
+    : acousticBrainz;
 
   const enriched = {
     mbid,
     musicBrainz,
-    acousticBrainz,
-    tags: openMusicTags(musicBrainz, track.listenBrainz, acousticBrainz),
+    acousticBrainz: normalizedAcoustic,
+    tags: [...new Set([...(track.tags || []), ...trackMicroVibes(track), ...openMusicTags(musicBrainz, track.listenBrainz, normalizedAcoustic)])].slice(0, 24),
     sources: [
       "MusicBrainz",
       track.listenBrainz ? "ListenBrainz" : null,
-      hasAcousticPayload(acousticBrainz) ? "AcousticBrainz" : null,
+      hasAcousticPayload(normalizedAcoustic) ? "AcousticBrainz" : null,
     ].filter(Boolean),
   };
 
@@ -339,7 +447,7 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
           texture: comparison.texture || "open",
         },
         analysis: criteriaAnalysis(comparison),
-        essencePassed: score >= Math.max(0.5, similarity - 0.12),
+        essencePassed: score >= passThreshold(similarity, comparison.acousticLevel),
         acousticLevel: comparison.acousticLevel,
       };
     })
@@ -403,7 +511,7 @@ function compareOpenAudio(seedOpen, trackOpen, index = 0) {
   const dataScore = available.length
     ? weightedAverage(available.map((item) => [item.score, item.weight]))
     : 0;
-  const tagScore = tagSimilarity(seedOpen?.tags || [], trackOpen?.tags || []);
+  const tagScore = vibeTagSimilarity(seedOpen?.tags || [], trackOpen?.tags || []);
   const listenBrainzTrust = clamp(0.72 - index * 0.006, 0.38, 0.72);
   const rawScore =
     acousticLevel === "full"
@@ -464,7 +572,7 @@ function compareMelody(seed, track) {
 
 function compareEmotionalEnergy(seed, track, seedOpen, trackOpen) {
   const acousticScore = vectorSimilarity(seed.moodVector, track.moodVector);
-  const tagScore = tagSimilarity(seedOpen?.tags || [], trackOpen?.tags || []);
+  const tagScore = vibeTagSimilarity(seedOpen?.tags || [], trackOpen?.tags || []);
   const score = acousticScore ? acousticScore * 0.72 + tagScore * 0.28 : tagScore;
   return criterion("Emotional energy", score, Boolean(acousticScore || tagScore), "Mood classes and emotional tags", 1.02);
 }
@@ -571,6 +679,7 @@ function normalizeMusicBrainzRecording(recording) {
     trackViewUrl: `https://musicbrainz.org/recording/${recording.id}`,
     artworkUrl100: "",
     tags,
+    score: recording.score || 0,
   };
 }
 
@@ -704,6 +813,126 @@ function openListenBrainzTags(item) {
   return [...tags].filter(Boolean).slice(0, 18);
 }
 
+function seedSearchQueries(term) {
+  const normalized = normalize(term);
+  const queries = [];
+  const known = knownSearchQuery(normalized);
+  if (known) queries.push(known);
+
+  queries.push(term);
+
+  const words = normalized.split(" ").filter(Boolean);
+  if (words.length <= 5) {
+    queries.push(`recording:"${escapeLucene(term)}"`);
+  }
+
+  const artistGuess = knownArtistFromQuery(normalized);
+  if (artistGuess) {
+    const titleGuess = normalized.replace(artistGuess, "").trim();
+    if (titleGuess) {
+      queries.push(`recording:"${escapeLucene(titleGuess)}" AND artist:"${escapeLucene(artistGuess)}"`);
+    }
+  }
+
+  return [...new Set(queries.filter(Boolean))].slice(0, 5);
+}
+
+function knownSearchQuery(normalizedTerm) {
+  for (const [title, artist] of knownOriginals) {
+    if (normalizedTerm.includes(title) && (normalizedTerm.includes(artist) || normalizedTerm === title)) {
+      return `recording:"${escapeLucene(title)}" AND artist:"${escapeLucene(artist)}"`;
+    }
+  }
+  return null;
+}
+
+function knownArtistFromQuery(normalizedTerm) {
+  for (const artist of knownOriginals.values()) {
+    if (normalizedTerm.includes(artist)) return artist;
+  }
+  return null;
+}
+
+function fallbackSearchQueries(seed) {
+  const knownProfile = knownTrackProfile(seed);
+  if (knownProfile?.queries?.length) return knownProfile.queries;
+
+  const tags = [...new Set([...trackMicroVibes(seed), ...(seed.openMusic?.tags || []), ...(seed.tags || [])])]
+    .map(normalize)
+    .filter(Boolean);
+  const tagQueries = tags.slice(0, 8).map((tag) => `tag:${quoteTag(tag)}`);
+  const pairQueries = [];
+
+  for (let index = 0; index < Math.min(tags.length - 1, 5); index += 1) {
+    pairQueries.push(`tag:${quoteTag(tags[index])} AND tag:${quoteTag(tags[index + 1])}`);
+  }
+
+  const genre = normalize(seed.primaryGenreName);
+  const genreQueries = genre && genre !== "open music" ? [`tag:${quoteTag(genre)}`] : [];
+  const artistFallback = seed.artistName && normalize(seed.artistName) !== "unknown artist"
+    ? [`artist:"${escapeLucene(seed.artistName)}"`]
+    : [];
+
+  return [...new Set([...(knownProfile?.queries || []), ...pairQueries, ...tagQueries, ...genreQueries, ...artistFallback])].slice(0, 14);
+}
+
+function trackMicroVibes(track) {
+  const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName} ${(track.tags || []).join(" ")}`);
+  const tags = new Set();
+
+  const knownProfile = knownTrackProfile(track);
+  if (knownProfile) {
+    knownProfile.tags.forEach((tag) => tags.add(tag));
+    return [...tags];
+  }
+
+  for (const [vibe, vibeTags] of Object.entries(everyNoiseInspiredVibes)) {
+    if (vibeTags.some((tag) => text.includes(normalize(tag))) || text.includes(normalize(vibe))) {
+      vibeTags.forEach((tag) => tags.add(tag));
+    }
+  }
+
+  if (text.includes("rock")) ["rock", "guitar", "drums"].forEach((tag) => tags.add(tag));
+  if (text.includes("funk")) ["funk", "bass", "groove"].forEach((tag) => tags.add(tag));
+  if (text.includes("pop")) ["pop", "polished", "hook"].forEach((tag) => tags.add(tag));
+  if (text.includes("ambient")) ["ambient", "spacious", "texture"].forEach((tag) => tags.add(tag));
+  if (text.includes("metal")) ["metal", "distortion", "heavy"].forEach((tag) => tags.add(tag));
+  if (text.includes("soul") || text.includes("r b")) ["soul", "warm", "vocal"].forEach((tag) => tags.add(tag));
+
+  return [...tags].slice(0, 12);
+}
+
+function knownTrackProfile(track) {
+  const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName} ${(track.tags || []).join(" ")}`);
+  return knownTrackVibes.find((item) => item.match.every((part) => text.includes(normalize(part)))) || null;
+}
+
+function mergeSearchResults(batches) {
+  const byId = new Map();
+  batches.forEach((batch, batchIndex) => {
+    batch.forEach((recording, index) => {
+      const current = byId.get(recording.id);
+      const bonus = Math.max(0, 60 - batchIndex * 8 - index);
+      const score = Number(recording.score || 0) + bonus;
+      if (!current || score > current.score) byId.set(recording.id, { ...recording, score });
+    });
+  });
+  return [...byId.values()];
+}
+
+function quoteTag(tag) {
+  return tag.includes(" ") ? `"${escapeLucene(tag)}"` : escapeLucene(tag);
+}
+
+function escapeLucene(value) {
+  return String(value || "").replace(/["\\]/g, " ").trim();
+}
+
+function parseAnchorQuery(query) {
+  const match = String(query).match(/^recording:"([^"]+)" AND artist:"([^"]+)"$/);
+  return match ? { title: match[1], artist: match[2] } : null;
+}
+
 function renderSeed(track) {
   seedSection.hidden = false;
   const sources = track.openMusic?.sources?.join(" + ") || "MusicBrainz";
@@ -818,18 +1047,21 @@ function seedScore(term, track) {
 
 function isLowQualityVariant(track) {
   const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
-  return /\b(live|karaoke|tribute|cover|remix|instrumental|made famous by|sped up|slowed|re-recorded)\b/.test(text);
+  return /\b(live|karaoke|tribute|cover|remix|instrumental|made famous by|sped up|slowed|re-recorded|demos?|outtake|rehearsal)\b/.test(text);
 }
 
 function diversifyTracks(tracks, limit) {
   const selected = [];
   const artists = new Set();
+  const titles = new Set();
 
   for (const track of tracks) {
     const artist = normalize(track.artistName);
-    if (artists.has(artist)) continue;
+    const title = normalize(track.trackName);
+    if (artists.has(artist) || titles.has(title)) continue;
     selected.push(track);
     artists.add(artist);
+    titles.add(title);
     if (selected.length === limit) return selected;
   }
 
@@ -840,6 +1072,12 @@ function applyStrictness(score, similarity, acousticLevel) {
   const floor = acousticLevel === "full" ? 0.34 : acousticLevel === "partial" ? 0.3 : 0.24;
   const adjusted = score - Math.max(0, similarity - 0.72) * 0.28;
   return clamp(adjusted, floor, 0.96);
+}
+
+function passThreshold(similarity, acousticLevel) {
+  if (acousticLevel === "tags") return 0.36;
+  if (acousticLevel === "partial") return Math.max(0.44, similarity - 0.2);
+  return Math.max(0.5, similarity - 0.12);
 }
 
 function categoryData(category) {
@@ -884,6 +1122,27 @@ function tagSimilarity(a, b) {
   let overlap = 0;
   for (const tag of left) if (right.has(tag)) overlap += 1;
   return overlap / Math.sqrt(left.size * right.size);
+}
+
+function vibeTagSimilarity(a, b) {
+  const expandedA = expandVibeTags(a);
+  const expandedB = expandVibeTags(b);
+  return tagSimilarity(expandedA, expandedB);
+}
+
+function expandVibeTags(tags) {
+  const expanded = new Set();
+  for (const tag of tags || []) {
+    const normalized = normalize(tag);
+    if (!normalized) continue;
+    expanded.add(normalized);
+    for (const vibeTags of Object.values(everyNoiseInspiredVibes)) {
+      if (vibeTags.map(normalize).includes(normalized)) {
+        vibeTags.forEach((item) => expanded.add(normalize(item)));
+      }
+    }
+  }
+  return [...expanded];
 }
 
 function weightedTagOverlap(tags, targets) {
@@ -963,7 +1222,13 @@ async function fetchJson(url) {
   const cached = readCache(url);
   if (cached) return cached;
 
-  const response = await fetch(url);
+  let response = await fetch(url);
+  if (!response.ok) {
+    const fallbackUrl = externalFallbackUrl(url);
+    if (fallbackUrl) {
+      response = await fetch(fallbackUrl, { headers: { Accept: "application/json" } });
+    }
+  }
   if (!response.ok) {
     throw new Error(`${url.split("?")[0]} returned ${response.status}`);
   }
@@ -971,6 +1236,40 @@ async function fetchJson(url) {
   if (data?.error) throw new Error(data.error);
   writeCache(url, data);
   return data;
+}
+
+function externalFallbackUrl(url) {
+  const parsed = new URL(url, location.origin);
+  const path = parsed.pathname;
+
+  if (path === OPEN_SEARCH_API_URL) {
+    const query = parsed.searchParams.get("q") || "";
+    const limit = parsed.searchParams.get("limit") || "10";
+    return `https://musicbrainz.org/ws/2/recording?fmt=json&limit=${encodeURIComponent(limit)}&query=${encodeURIComponent(query)}`;
+  }
+
+  if (path === MUSICBRAINZ_API_URL) {
+    const mbid = parsed.searchParams.get("mbid");
+    if (mbid) {
+      return `https://musicbrainz.org/ws/2/recording/${encodeURIComponent(mbid)}?fmt=json&inc=artists+releases+tags+genres`;
+    }
+  }
+
+  if (path === ACOUSTICBRAINZ_API_URL) {
+    const mbid = parsed.searchParams.get("mbid");
+    if (mbid) {
+      return `https://acousticbrainz.org/api/v1/${encodeURIComponent(mbid)}/low-level`;
+    }
+  }
+
+  if (path === SIMILARBRAINZ_API_URL) {
+    const mbid = parsed.searchParams.get("mbid");
+    if (mbid) {
+      return `https://labs.api.listenbrainz.org/similar-recordings/json?recording_mbids=${encodeURIComponent(mbid)}&algorithm=session_based_days_7500_session_300_contribution_5_threshold_15_limit_50_skip_30`;
+    }
+  }
+
+  return null;
 }
 
 async function fetchJsonSafe(url) {
@@ -1086,7 +1385,10 @@ async function mapWithConcurrency(items, limit, worker) {
 function dedupeTracks(tracks) {
   const seen = new Map();
   for (const track of tracks) {
-    const key = track.trackId || `${normalize(track.trackName)}:${normalize(track.artistName)}`;
+    const key =
+      track.trackName && track.artistName
+        ? `${normalize(track.trackName)}:${normalize(track.artistName)}`
+        : track.trackId;
     if (!seen.has(key)) seen.set(key, track);
   }
   return [...seen.values()];
@@ -1097,7 +1399,7 @@ function artistCreditName(credit) {
   return credit
     .map((item) => item.name || item.artist?.name || "")
     .filter(Boolean)
-    .join("");
+    .join(" & ");
 }
 
 function year(value) {
