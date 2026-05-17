@@ -19,14 +19,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-deezer-main-v30";
+const APP_VERSION = "vibingecho-deezer-main-v31";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-deezer-cache-v30";
+const CACHE_KEY = "vibingecho-deezer-cache-v31";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -395,18 +395,22 @@ async function deezerCandidates(seed) {
   const queries = deezerSearchQueries(seed);
   const seedVibes = [...new Set([...trackMicroVibes(seed), ...(seed.tags || []), ...(seed.openMusic?.tags || [])])].filter(Boolean);
   const batches = await Promise.all(
-    queries.map(async (query) => {
-      const queryVibes = [...everyNoiseQueryTags(query), cleanGenreLabel(query)].filter(Boolean);
+    queries.map(async (queryData) => {
+      const query = queryData.query || queryData;
+      const queryVibes = [...everyNoiseQueryTags(query), ...(queryData.tags || []), cleanGenreLabel(query)].filter(Boolean);
       const tracks = await searchDeezerTracks(query, 28);
       return tracks.map((track) => ({
         ...track,
         tags: [...new Set([...(track.tags || []), ...queryVibes, ...seedVibes])].slice(0, 24),
+        candidateQuery: query,
+        candidateSpecificity: queryData.specificity || querySpecificity(query),
       }));
     }),
   );
   return dedupeTracks(batches.flat())
     .filter((track) => track.trackId !== seed.trackId)
     .filter((track) => !isLowQualityVariant(track))
+    .filter((track) => candidateRelevantToSeed(seed, track))
     .slice(0, 90);
 }
 
@@ -675,7 +679,7 @@ function compareOpenAudio(seedOpen, trackOpen, index = 0) {
       ? dataScore * 0.78 + tagScore * 0.12 + listenBrainzTrust * 0.1
       : acousticLevel === "partial"
         ? dataScore * 0.55 + tagScore * 0.18 + listenBrainzTrust * 0.27
-        : tagScore * 0.28 + listenBrainzTrust * 0.48;
+        : tagScore * 0.5 + listenBrainzTrust * 0.22;
   const ceiling = acousticLevel === "full" ? 0.96 : acousticLevel === "partial" ? 0.84 : 0.74;
 
   return {
@@ -1041,27 +1045,31 @@ function deezerSearchQueries(seed) {
   const anchorQueries = (profile?.queries || [])
     .map(parseAnchorQuery)
     .filter(Boolean)
-    .map((item) => `${item.title} ${item.artist}`);
+    .map((item) => ({ query: `${item.title} ${item.artist}`, tags: profile.tags || [], specificity: 1 }));
   const vibes = [...new Set([...trackMicroVibes(seed), ...(seed.tags || []), ...(seed.openMusic?.tags || [])])]
     .map(cleanGenreLabel)
     .filter(Boolean)
+    .filter((vibe) => !genericQueryTerm(vibe))
     .slice(0, 8);
   const artist = usableArtistName(seed.artistName) ? seed.artistName : displayArtist(seed);
   const title = seed.trackName || displayTitle(seed);
   const genre = cleanGenreLabel(seed.primaryGenreName);
+  const genreQuery = genre && !genericQueryTerm(genre)
+    ? [{ query: `${genre} ${artist}`, tags: [genre], specificity: 0.72 }]
+    : [];
 
   return [
     ...anchorQueries,
-    `${title} ${artist}`,
-    artist,
-    genre,
-    ...vibes,
-    ...vibes.map((vibe) => `${vibe} ${artist}`),
+    { query: `${title} ${artist}`, tags: trackMicroVibes(seed), specificity: 1 },
+    { query: `${title} ${artist} similar`, tags: trackMicroVibes(seed), specificity: 0.92 },
+    { query: `${artist} ${vibes.slice(0, 2).join(" ")}`, tags: vibes.slice(0, 2), specificity: 0.78 },
+    ...genreQuery,
+    ...vibes.map((vibe) => ({ query: `${vibe} ${artist}`, tags: [vibe], specificity: 0.68 })),
   ]
-    .map((item) => String(item || "").trim())
-    .filter(Boolean)
-    .filter((item, index, list) => list.indexOf(item) === index)
-    .slice(0, 16);
+    .map((item) => ({ ...item, query: String(item.query || "").trim() }))
+    .filter((item) => item.query && querySpecificity(item.query) >= 0.45)
+    .filter((item, index, list) => list.findIndex((other) => other.query === item.query) === index)
+    .slice(0, 12);
 }
 
 function trackMicroVibes(track) {
@@ -1099,6 +1107,33 @@ function everyNoiseQueryTags(query) {
     }
   }
   return [...tags].slice(0, 10);
+}
+
+function candidateRelevantToSeed(seed, track) {
+  const seedText = normalize(`${seed.trackName} ${seed.artistName} ${(seed.tags || []).join(" ")} ${(seed.openMusic?.tags || []).join(" ")}`);
+  const trackText = normalize(`${track.trackName} ${track.artistName} ${track.collectionName} ${(track.tags || []).join(" ")}`);
+  const seedArtist = normalize(seed.artistName);
+  const trackArtist = normalize(track.artistName);
+  const tagScore = vibeTagSimilarity(
+    [...trackMicroVibes(seed), ...(seed.tags || []), ...(seed.openMusic?.tags || [])],
+    [...trackMicroVibes(track), ...(track.tags || [])],
+  );
+  const textScore = textSimilarity(seedText, trackText);
+  const queryScore = textSimilarity(track.candidateQuery || "", trackText);
+  const sameArtist = seedArtist && trackArtist && seedArtist === trackArtist;
+  const specificity = track.candidateSpecificity || 0;
+
+  return sameArtist || tagScore >= 0.18 || textScore >= 0.1 || (specificity >= 0.75 && queryScore >= 0.12);
+}
+
+function querySpecificity(query) {
+  const words = normalize(query).split(" ").filter(Boolean);
+  const useful = words.filter((word) => !genericQueryTerm(word));
+  return clamp(useful.length / 5, 0, 1);
+}
+
+function genericQueryTerm(value) {
+  return /^(pop|rock|music|song|track|hits?|best|top|official|similar|catalog|vibe|dance|rap|hip|hop|indie|latin|r b|rb)$/.test(normalize(value));
 }
 
 function knownTrackProfile(track) {
@@ -1394,7 +1429,7 @@ function applyStrictness(score, similarity, acousticLevel) {
 }
 
 function passThreshold(similarity, acousticLevel) {
-  if (acousticLevel === "tags") return 0.36;
+  if (acousticLevel === "tags") return 0.42;
   if (acousticLevel === "partial") return Math.max(0.44, similarity - 0.2);
   return Math.max(0.5, similarity - 0.12);
 }
