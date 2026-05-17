@@ -16,15 +16,15 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-discovery-v8";
+const APP_VERSION = "vibingecho-deep-cuts-v9";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v8";
+const CACHE_KEY = "vibingecho-cache-v9";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
-const AUDIO_ANALYSIS_LIMIT = 60;
+const AUDIO_ANALYSIS_LIMIT = 96;
 const currentTracks = new Map();
 
 const moodLabels = {
@@ -387,7 +387,7 @@ async function collectCandidates(seed, country, mood) {
   const terms = candidateSearchTerms(seed, mood);
 
   const batches = await Promise.all(
-    terms.map((term) => searchItunes({ term, country, limit: 45 })),
+    terms.map((term) => searchItunes({ term, country, limit: 70 })),
   );
 
   const usBatches =
@@ -396,7 +396,7 @@ async function collectCandidates(seed, country, mood) {
       : await Promise.all(
           terms
             .slice(0, 4)
-            .map((term) => searchItunes({ term, country: "US", limit: 35 })),
+            .map((term) => searchItunes({ term, country: "US", limit: 55 })),
         );
 
   return prioritizeCandidatePool(seed, dedupeTracks([...batches, ...usBatches].flat().filter(isSong)));
@@ -557,15 +557,21 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
     })
     .sort((a, b) => b.score - a.score);
 
-  const audioRanked = ranked.filter((track) => track.audioFeatures && track.score >= 48 + similarity * 12);
-  const fallbackRanked = ranked.filter((track) => !track.audioFeatures && track.score >= 42);
-  const primary = diversifyTracks(audioRanked, 12, { strict: similarity > 0.55 });
+  const audioRanked = ranked.filter((track) => {
+    const mainstream = mainstreamArtists.has(normalize(track.artistName));
+    return track.audioFeatures && track.score >= (mainstream ? 72 : 46 + similarity * 8);
+  });
+  const fallbackRanked = ranked.filter((track) => {
+    const mainstream = mainstreamArtists.has(normalize(track.artistName));
+    return !track.audioFeatures && track.score >= (mainstream ? 68 : 36);
+  });
+  const primary = diversifyTracks(audioRanked, 14, { strict: false });
 
-  if (primary.length >= 6) {
+  if (primary.length >= 10) {
     return primary;
   }
 
-  return diversifyTracks([...primary, ...fallbackRanked], 12, { strict: false });
+  return diversifyTracks([...primary, ...fallbackRanked], 14, { strict: false });
 }
 
 function diversifyTracks(tracks, limit, options = {}) {
@@ -580,12 +586,12 @@ function diversifyTracks(tracks, limit, options = {}) {
     const artistKey = normalize(track.artistName);
     const profileUses = profileCount.get(profileKey) || 0;
     const artistUses = artistCount.get(artistKey) || 0;
-    const saturatedTags = (track.tags || []).filter((tag) => (tagCount.get(tag) || 0) >= 3).length;
+    const saturatedTags = (track.tags || []).filter((tag) => (tagCount.get(tag) || 0) >= 5).length;
 
     if (
-      profileUses >= (strict ? 1 : 2) ||
+      profileUses >= (strict ? 2 : 4) ||
       artistUses >= 1 ||
-      saturatedTags >= (strict ? 1 : 3)
+      saturatedTags >= (strict ? 3 : 6)
     ) {
       continue;
     }
@@ -607,13 +613,17 @@ function candidateSearchTerms(seed, mood) {
   const genre = seed.primaryGenreName || "";
   const normalizedGenre = normalize(genre);
   const terms = [
-    seed.artistName,
     genre,
     ...genreFamily(normalizedGenre),
     ...genreMoodHints[mood].slice(0, 2),
+    `${genre} deep cuts`,
+    `${genre} indie`,
+    `${genre} underground`,
+    `${genre} emerging artists`,
+    `${moodLabels[mood]} ${genre}`,
   ];
 
-  return [...new Set(terms.filter(Boolean).map((term) => term.trim()).filter(Boolean))].slice(0, 8);
+  return [...new Set(terms.filter(Boolean).map((term) => term.trim()).filter(Boolean))].slice(0, 12);
 }
 
 function genreFamily(genre) {
@@ -745,10 +755,21 @@ function categoryAnalysis(track, categoryInfo, profile, sharedTags) {
 }
 
 function categoryData(category) {
-  return categoryCatalog[category] || {
+  const data = categoryCatalog[category] || {
     label: category,
     terms: [category],
     tags: [category],
+  };
+
+  return {
+    ...data,
+    terms: [
+      ...data.terms,
+      `${data.label} deep cuts`,
+      `${data.label} underground`,
+      `${data.label} lesser known`,
+      `${data.label} emerging artists`,
+    ],
   };
 }
 
@@ -802,13 +823,13 @@ function discoveryScore(track, tags = []) {
   const searchRank = track.searchRank || 0;
   let score = 0;
 
-  if (!mainstreamArtists.has(artist)) score += 24;
-  else score -= 18;
+  if (!mainstreamArtists.has(artist)) score += 42;
+  else score -= 42;
 
   if (track.previewUrl) score += 10;
   if (tags.length >= 8) score += 12;
-  if (searchRank > 0 && searchRank < 96) score += 14;
-  if (searchRank >= 120) score -= 18;
+  if (searchRank > 0 && searchRank < 60) score += 20;
+  if (searchRank >= 100) score -= 34;
 
   const collection = normalize(track.collectionName);
   if (/greatest hits|the best|essential|collection|karaoke|tribute/.test(collection)) {
