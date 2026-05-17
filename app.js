@@ -16,11 +16,11 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-essence-gate-v14";
+const APP_VERSION = "vibingecho-audio-criteria-v15";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v14";
+const CACHE_KEY = "vibingecho-cache-v15";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -510,10 +510,6 @@ function jsonp(url) {
 }
 
 async function rankTracks(seed, tracks, mood, similarity = 0.72) {
-  const seedProfile = vibeProfile(seed, seed.audioFeatures);
-  const seedTags = trackTags(seed, seedProfile);
-  const seedVibes = trackVibes(seed, seedProfile);
-  const seedFamilies = soundFamilies(seed);
   const analyzedTracks = await mapWithConcurrency(tracks.slice(0, AUDIO_ANALYSIS_LIMIT), 6, async (track) => ({
       ...track,
       audioFeatures: await analyzeTrackAudio(track),
@@ -521,123 +517,30 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
 
   const ranked = analyzedTracks
     .filter((track) => track.trackId !== seed.trackId)
+    .filter((track) => track.audioFeatures)
     .map((track) => {
-      const reasons = [];
-      let score = 0;
       const profile = vibeProfile(track, track.audioFeatures);
-      const tags = trackTags(track, profile);
-      const sharedTags = intersection(seedTags, tags);
-      const vibes = trackVibes(track, profile);
-      const sharedVibes = intersection(seedVibes, vibes);
-      const sharedFamilies = intersection(seedFamilies, soundFamilies(track));
-      const sharedCoreFamilies = coreSoundFamilies(sharedFamilies);
       const audioSimilarity = compareAudioFeatures(seed.audioFeatures, track.audioFeatures);
       const criterionMatches = audioSimilarity.criteria || [];
-
-      if (audioSimilarity.available) {
-        score += Math.round(audioSimilarity.score * 100);
-        reasons.push(audioSimilarity.reason);
-      } else if (seed.audioFeatures) {
-        score -= 42;
-      }
-
-      const moodMatch = inferMood(track, track.audioFeatures) === mood;
-      if (moodMatch) {
-        score += audioSimilarity.available ? 8 + Math.round((1 - similarity) * 8) : 24;
-        reasons.push(`${moodLabels[mood]} emotional profile`);
-      }
-
-      const durationDiff = Math.abs((seed.trackTimeMillis || 0) - (track.trackTimeMillis || 0));
-      if (durationDiff && durationDiff < 45000) {
-        score += audioSimilarity.available ? 5 : 16;
-        reasons.push("similar pacing");
-      }
-
-      if (profile.pace === seedProfile.pace) {
-        score += 6;
-        reasons.push(`${profile.pace} pace`);
-      }
-
-      if (profile.texture === seedProfile.texture) {
-        score += 6;
-        reasons.push(`${profile.texture} texture`);
-      }
-
-      if (same(seed.primaryGenreName, track.primaryGenreName)) {
-        score += audioSimilarity.available ? Math.round(3 + (1 - similarity) * 10) : 24;
-        reasons.push(`nearby sound: ${track.primaryGenreName}`);
-      }
-
-      score += Math.min(sharedFamilies.length * 8, 18);
-      if (sharedFamilies.length) {
-        reasons.push(`${sharedFamilies.length} shared sound families`);
-      }
-
-      if (same(seed.artistName, track.artistName)) {
-        score += 4;
-      }
-
-      score += Math.min(sharedTags.length * 4, 18);
-      if (sharedTags.length) {
-        reasons.push(`${sharedTags.length} shared categories`);
-      }
-
-      score += Math.min(sharedVibes.length * 8, 24);
-      if (sharedVibes.length) {
-        reasons.push(`${sharedVibes.length} shared vibes`);
-      }
-
-      score -= essenceMismatchPenalty(seedVibes, vibes, seedFamilies, soundFamilies(track));
-
-      if (isLowQualityVariant(track)) {
-        score -= 35;
-      }
-
-      score += Math.round(discoveryScore(track, tags) * 0.08);
+      const score = Math.round(audioSimilarity.score * 100);
 
       return {
         ...track,
-        score: Math.min(score, 99),
-        reasons: reasons.slice(0, 3),
+        score,
+        reasons: criterionMatches.slice(0, 3).map((criterion) => criterion.label),
         mood: profile.mood,
         profile,
-        tags,
-        sharedTags,
-        vibes,
-        sharedVibes,
-        sharedFamilies,
-        sharedCoreFamilies,
         criterionMatches,
         audioMatchScore: audioSimilarity.score,
-        essencePassed: essencePassed(audioSimilarity, sharedVibes, sharedFamilies),
-        matchPercent: matchPercent(audioSimilarity, sharedVibes, sharedFamilies, profile, seedProfile),
-        analysis: vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags, sharedVibes, sharedFamilies),
+        essencePassed: criteriaPassed(audioSimilarity),
+        matchPercent: score,
+        analysis: criteriaAnalysis(track, audioSimilarity),
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .filter((track) => track.essencePassed)
+    .sort((a, b) => b.audioMatchScore - a.audioMatchScore);
 
-  const audioRanked = ranked.filter((track) => {
-    const mainstream = mainstreamArtists.has(normalize(track.artistName));
-    return (
-      track.audioFeatures &&
-      track.essencePassed &&
-      track.audioMatchScore >= 0.8 &&
-      track.sharedVibes.length >= 2 &&
-      (track.sharedCoreFamilies.length >= 1 || (track.audioMatchScore >= 0.9 && track.sharedVibes.length >= 4)) &&
-      track.score >= (mainstream ? 82 : 70)
-    );
-  });
-  const fallbackRanked = ranked.filter((track) => {
-    const mainstream = mainstreamArtists.has(normalize(track.artistName));
-    return !track.audioFeatures && track.sharedVibes.length >= 4 && track.sharedFamilies.length >= 1 && track.score >= (mainstream ? 78 : 62);
-  });
-  const primary = diversifyTracks(audioRanked, 12, { strict: false });
-
-  if (primary.length >= 8) {
-    return primary;
-  }
-
-  return diversifyTracks([...primary, ...fallbackRanked], 12, { strict: false });
+  return diversifyTracks(ranked, 12, { strict: false });
 }
 
 function diversifyTracks(tracks, limit, options = {}) {
@@ -647,7 +550,7 @@ function diversifyTracks(tracks, limit, options = {}) {
   const tagCount = new Map();
   const strict = options.strict ?? false;
 
-  for (const track of [...tracks].sort((a, b) => finalDiscoverySort(b) - finalDiscoverySort(a))) {
+  for (const track of tracks) {
     const profileKey = `${track.profile.mood}-${track.profile.pace}-${track.profile.texture}`;
     const artistKey = normalize(track.artistName);
     const profileUses = profileCount.get(profileKey) || 0;
@@ -1159,7 +1062,9 @@ function renderResults(tracks) {
 }
 
 function tagBadges(track) {
-  const tags = (track.sharedVibes?.length ? track.sharedVibes : track.sharedTags?.length ? track.sharedTags : track.tags || []).slice(0, 5);
+  const tags = track.criterionMatches?.length
+    ? track.criterionMatches.slice(0, 4).map((criterion) => criterion.label)
+    : (track.sharedVibes?.length ? track.sharedVibes : track.sharedTags?.length ? track.sharedTags : track.tags || []).slice(0, 5);
   return tags.map((tag) => `<span class="category-tag">${escapeHtml(tag)}</span>`).join("");
 }
 
@@ -1683,6 +1588,39 @@ function essencePassed(audioSimilarity, sharedVibes, sharedFamilies) {
     sharedVibes.length >= 2 &&
     (coreFamilies.length >= 1 || (audioSimilarity.score >= 0.9 && sharedVibes.length >= 4))
   );
+}
+
+function criteriaPassed(audioSimilarity) {
+  if (!audioSimilarity.available) return false;
+  const criteria = Object.fromEntries(audioSimilarity.criteria.map((item) => [item.key, item.score]));
+
+  return (
+    audioSimilarity.score >= 0.76 &&
+    (criteria.tonalityHarmony || 0) >= 0.62 &&
+    (criteria.bpmRhythm || 0) >= 0.7 &&
+    (criteria.drumsPercussion || 0) >= 0.68 &&
+    (criteria.timbre || 0) >= 0.68 &&
+    (criteria.textureProduction || 0) >= 0.62 &&
+    (criteria.structure || 0) >= 0.52 &&
+    (criteria.melody || 0) >= 0.58 &&
+    (criteria.emotionalEnergy || 0) >= 0.62 &&
+    (criteria.dynamics || 0) >= 0.55 &&
+    (criteria.vocalStyle || 0) >= 0.52 &&
+    (criteria.frequencyRange || 0) >= 0.7 &&
+    (criteria.repetitiveMotifs || 0) >= 0.5
+  );
+}
+
+function criteriaAnalysis(track, audioSimilarity) {
+  const top = audioSimilarity.criteria.slice(0, 4).map((criterion) => criterion.label).join(", ");
+  const weak = audioSimilarity.criteria
+    .slice()
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 2)
+    .map((criterion) => criterion.label)
+    .join(", ");
+
+  return `This recommendation is based only on the requested audio criteria. Strongest overlaps: ${top}. Weakest accepted differences: ${weak}. It passed the gates for tonality/harmony, BPM/rhythm, percussion, timbre, production texture, structure, melody, emotional energy, dynamics, vocal style, dominant frequency range, and repetitive motifs.`;
 }
 
 function coreSoundFamilies(families) {

@@ -31,11 +31,13 @@ It does not need a backend, manual database, Java, Node, or API key.
   punch, production texture, dynamics, and multiple shared vibes. Category
   exploration can still use deep-cut and emerging-artist terms for broader
   discovery.
-- The visible percentage is now an "essence" score, gated by core criteria
-  instead of a generic additive match. A recommendation must pass rhythm,
-  percussion, timbre/texture, frequency-range, emotional, and sound-family checks.
-- Generic "pop" overlap is no longer enough. Song recommendations need a core
-  sound-family connection or an exceptionally strong audio essence match.
+- Song recommendations now use only the requested audio criteria. Genre,
+  popularity, discovery score, artist name, era, tags, and generic category
+  overlap do not add to the song-match score.
+- The visible percentage is an audio-criteria score. A recommendation must pass
+  gates for tonality/harmony, BPM/rhythm, percussion pattern, timbre,
+  production texture, structure, melody, emotional energy, dynamics, vocal style,
+  dominant frequency range, and repetitive motifs.
 - The browser keeps a local cache for 24 hours to avoid repeated calls.
 
 ## Deploy to Vercel
