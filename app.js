@@ -13,16 +13,20 @@ const categoryButton = document.querySelector("#category-button");
 const surpriseButton = document.querySelector("#surprise-button");
 const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
+const progressWrap = document.querySelector("#progress-wrap");
+const progressLabel = document.querySelector("#progress-label");
+const progressPercent = document.querySelector("#progress-percent");
+const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-open-vibes-v27";
+const APP_VERSION = "vibingecho-open-vibes-v28";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-open-cache-v27";
+const CACHE_KEY = "vibingecho-open-cache-v28";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -239,14 +243,17 @@ renderFavorites();
 
 async function runRecommendation(term) {
   setLoading(true, `Searching MusicBrainz... ${APP_VERSION}`);
+  updateProgress(5, "Starting search");
   seedSection.hidden = true;
   results.innerHTML = "";
 
   try {
+    updateProgress(12, "Finding reference track");
     const seed = await findSeedTrack(term);
 
     if (!seed) {
       setStatus("I could not find that song in MusicBrainz. Try writing the song plus artist or band.");
+      updateProgress(0, "Ready", { hidden: true });
       return;
     }
 
@@ -262,6 +269,7 @@ async function runRecommendation(term) {
 
 async function runFromSeed(seed) {
   setLoading(true, `Reading open music data... ${APP_VERSION}`);
+  updateProgress(22, "Reading reference data");
   seedSection.hidden = true;
   results.innerHTML = "";
 
@@ -269,16 +277,20 @@ async function runFromSeed(seed) {
     seed.openMusic = seed.openMusic || (await enrichOpenMusic(seed));
     renderSeed(seed);
     hydrateSeedMedia(seed);
+    updateProgress(38, "Collecting similar tracks");
     setStatus("Finding ListenBrainz neighbors, then comparing AcousticBrainz sound criteria...");
 
     const candidates = await collectCandidates(seed);
+    updateProgress(58, "Comparing sound criteria");
     const recommendations = await rankTracks(seed, candidates, moodInput.value, similarityValue());
 
     if (!recommendations.length) {
       setStatus("I found the reference, but ListenBrainz did not return enough open-data neighbors for it.");
+      updateProgress(0, "Ready", { hidden: true });
       return;
     }
 
+    updateProgress(78, "Rendering recommendations");
     renderResults(recommendations);
     const acousticCount = recommendations.filter((track) => hasAcousticData(track.openMusic)).length;
     setStatus(
@@ -295,17 +307,21 @@ async function runFromSeed(seed) {
 async function runCategory(category) {
   const data = categoryData(category);
   setLoading(true, `Exploring ${data.label} with MusicBrainz... ${APP_VERSION}`);
+  updateProgress(8, "Starting category search");
   seedSection.hidden = true;
   seedCard.innerHTML = "";
   results.innerHTML = "";
 
   try {
+    updateProgress(28, "Collecting category tracks");
     const batches = await Promise.all(data.terms.map((term) => searchOpenRecordings(term, 18)));
     const candidates = dedupeTracks(batches.flat().map(normalizeMusicBrainzRecording).filter(Boolean));
+    updateProgress(52, "Reading open music data");
     const enriched = await mapWithConcurrency(candidates.slice(0, 60), 8, async (track) => ({
       ...track,
       openMusic: await enrichOpenMusic(track),
     }));
+    updateProgress(74, "Ranking category matches");
     const recommendations = rankCategoryTracks(category, enriched);
 
     renderResults(recommendations);
@@ -1051,8 +1067,12 @@ async function hydrateSeedMedia(track) {
 }
 
 async function hydrateMediaForTracks(tracks) {
+  let completed = 0;
+  updateProgress(82, "Loading covers and previews");
   await mapWithConcurrency(tracks, 8, async (track) => {
     track.media = track.media || (await enrichMedia(track));
+    completed += 1;
+    updateProgress(82 + (completed / Math.max(tracks.length, 1)) * 18, "Loading covers and previews");
     const card = results.querySelector(`[data-track-id="${cssEscape(track.trackId)}"]`);
     if (!card) return;
 
@@ -1067,9 +1087,11 @@ async function hydrateMediaForTracks(tracks) {
     if (small) {
       small.textContent = track.media?.previewUrl
         ? "Preview and cover from Deezer. Similarity data from MusicBrainz, ListenBrainz, and AcousticBrainz."
-        : "Cover loaded when available. Preview unavailable for this track.";
+      : "Cover loaded when available. Preview unavailable for this track.";
     }
   });
+  updateProgress(100, "Done");
+  window.setTimeout(() => updateProgress(0, "Ready", { hidden: true }), 900);
 }
 
 function vibeBars(criteria) {
@@ -1495,6 +1517,16 @@ function setLoading(isLoading, message) {
 
 function setStatus(message) {
   statusText.textContent = message;
+}
+
+function updateProgress(value, label, options = {}) {
+  const percent = Math.round(clamp(value, 0, 100));
+  progressWrap.hidden = Boolean(options.hidden);
+  if (!options.hidden) {
+    progressLabel.textContent = label;
+    progressPercent.textContent = `${percent}%`;
+    progressBar.style.width = `${percent}%`;
+  }
 }
 
 async function mapWithConcurrency(items, limit, worker) {

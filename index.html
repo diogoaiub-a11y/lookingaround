@@ -115,7 +115,16 @@
       </section>
 
       <section class="status-area" aria-live="polite">
-          <p id="status-text">Ready to find a vibe.</p>
+        <div class="progress-wrap" id="progress-wrap" hidden>
+          <div class="progress-meta">
+            <span id="progress-label">Preparing</span>
+            <strong id="progress-percent">0%</strong>
+          </div>
+          <div class="progress-track">
+            <span id="progress-bar"></span>
+          </div>
+        </div>
+        <p id="status-text">Ready to find a vibe.</p>
       </section>
 
       <section class="library-section">
@@ -170,6 +179,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=vibingecho-open-vibes-v27"></script>
+    <script src="app.js?v=vibingecho-open-vibes-v28"></script>
   </body>
 </html>
