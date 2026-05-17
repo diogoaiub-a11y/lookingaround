@@ -2,20 +2,30 @@ const form = document.querySelector("#recommendation-form");
 const queryInput = document.querySelector("#music-query");
 const countryInput = document.querySelector("#country");
 const moodInput = document.querySelector("#mood");
+const similarityInput = document.querySelector("#similarity");
+const similarityLabel = document.querySelector("#similarity-label");
+const categoryInput = document.querySelector("#category");
 const statusText = document.querySelector("#status-text");
 const seedSection = document.querySelector("#seed-section");
 const seedCard = document.querySelector("#seed-card");
 const results = document.querySelector("#results");
 const clearCacheButton = document.querySelector("#clear-cache");
+const categoryButton = document.querySelector("#category-button");
+const surpriseButton = document.querySelector("#surprise-button");
+const historyList = document.querySelector("#history-list");
+const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-audio-rank-v5";
+const APP_VERSION = "vibingecho-explore-v6";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v5";
+const CACHE_KEY = "vibingecho-cache-v6";
+const HISTORY_KEY = "vibingecho-history-v1";
+const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
 const AUDIO_ANALYSIS_LIMIT = 60;
+const currentTracks = new Map();
 
 const moodLabels = {
   melancholic: "melancholic",
@@ -132,12 +142,89 @@ const knownOriginals = new Map([
   ["blinding lights", "the weeknd"],
 ]);
 
+const categoryTerms = {
+  pop: ["pop", "dance pop", "top songs", "pop hits"],
+  "r&b": ["r&b", "soul", "neo soul", "quiet storm"],
+  rock: ["rock", "pop rock", "alternative rock", "classic rock"],
+  "hip-hop": ["hip-hop", "rap", "trap", "pop rap"],
+  dance: ["dance", "electronic", "house", "club"],
+  indie: ["indie", "alternative", "dream pop", "singer/songwriter"],
+  latin: ["latin pop", "reggaeton", "bachata", "urbano latino"],
+  calm: ["acoustic", "ambient", "piano", "chill"],
+  dark: ["dark pop", "alternative", "industrial", "trap"],
+};
+
+const surpriseQueries = [
+  "Blinding Lights The Weeknd",
+  "Bad Guy Billie Eilish",
+  "Get Lucky Daft Punk",
+  "Dreams Fleetwood Mac",
+  "Sweater Weather The Neighbourhood",
+  "Levitating Dua Lipa",
+  "Come As You Are Nirvana",
+  "Redbone Childish Gambino",
+];
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const term = queryInput.value.trim();
 
   if (!term) return;
 
+  await runRecommendation(term);
+});
+
+categoryButton.addEventListener("click", async () => {
+  await runCategory(categoryInput.value);
+});
+
+surpriseButton.addEventListener("click", async () => {
+  const query = surpriseQueries[Math.floor(Math.random() * surpriseQueries.length)];
+  queryInput.value = query;
+  await runRecommendation(query);
+});
+
+similarityInput.addEventListener("input", updateSimilarityLabel);
+
+results.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+
+  const card = button.closest(".track-card");
+  const track = currentTracks.get(card?.dataset.trackId);
+  if (!track) return;
+
+  if (button.classList.contains("more-like")) {
+    queryInput.value = `${track.trackName} ${track.artistName}`;
+    await runFromSeed(track);
+  }
+
+  if (button.classList.contains("favorite")) {
+    toggleFavorite(track);
+    renderFavorites();
+    button.textContent = isFavorite(track) ? "Saved" : "Save";
+  }
+});
+
+historyList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  queryInput.value = button.dataset.query;
+  await runRecommendation(button.dataset.query);
+});
+
+favoritesList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  queryInput.value = button.dataset.query;
+  await runRecommendation(button.dataset.query);
+});
+
+updateSimilarityLabel();
+renderHistory();
+renderFavorites();
+
+async function runRecommendation(term) {
   setLoading(true, `Searching the iTunes catalog... ${APP_VERSION}`);
   seedSection.hidden = true;
   results.innerHTML = "";
@@ -151,25 +238,41 @@ form.addEventListener("submit", async (event) => {
       return;
     }
 
-    setStatus(`Analyzing the reference preview... ${APP_VERSION}`);
-    seed.audioFeatures = await analyzeTrackAudio(seed);
+    addHistory(term);
+    await runFromSeed(seed);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Search failed: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function runFromSeed(seed) {
+  setLoading(true, `Analyzing the reference preview... ${APP_VERSION}`);
+  seedSection.hidden = true;
+  results.innerHTML = "";
+
+  try {
+    const country = countryInput.value;
+    seed.audioFeatures = seed.audioFeatures || (await analyzeTrackAudio(seed));
     renderSeed(seed);
-    if (!seed.audioFeatures) {
-      setStatus("This reference preview could not be analyzed. Recommendations will be weaker.");
-    } else {
-      setStatus("Analyzing candidate previews and matching the closest feel...");
-    }
+    setStatus(
+      seed.audioFeatures
+        ? "Analyzing candidate previews and matching the closest feel..."
+        : "This reference preview could not be analyzed. Recommendations will be weaker.",
+    );
 
     const selectedMood = moodInput.value === "auto" ? inferMood(seed, seed.audioFeatures) : moodInput.value;
     const candidates = await collectCandidates(seed, country, selectedMood);
-    const recommendations = await rankTracks(seed, candidates, selectedMood);
+    const recommendations = await rankTracks(seed, candidates, selectedMood, similarityValue());
 
     if (!recommendations.length) {
       setStatus("I found the reference, but not enough strong recommendations.");
       return;
     }
 
-    renderResults(recommendations, selectedMood);
+    renderResults(recommendations);
     setStatus(
       `${APP_VERSION}: analyzed ${recommendations.filter((track) => track.audioFeatures).length} usable previews and selected ${recommendations.length} close matches.`,
     );
@@ -179,7 +282,39 @@ form.addEventListener("submit", async (event) => {
   } finally {
     setLoading(false);
   }
-});
+}
+
+async function runCategory(category) {
+  setLoading(true, `Exploring ${category}... ${APP_VERSION}`);
+  seedSection.hidden = true;
+  seedCard.innerHTML = "";
+  results.innerHTML = "";
+
+  try {
+    const terms = categoryTerms[category] || [category];
+    const country = countryInput.value;
+    const batches = await Promise.all(
+      terms.map((term) => searchItunes({ term, country, limit: 35 })),
+    );
+    const candidates = prioritizeCategoryPool(
+      category,
+      dedupeTracks(batches.flat().filter(isSong)),
+    );
+    const analyzed = await mapWithConcurrency(candidates.slice(0, AUDIO_ANALYSIS_LIMIT), 6, async (track) => ({
+      ...track,
+      audioFeatures: await analyzeTrackAudio(track),
+    }));
+    const recommendations = rankCategoryTracks(category, analyzed, moodInput.value, similarityValue());
+
+    renderResults(recommendations);
+    setStatus(`${APP_VERSION}: ${recommendations.length} ${category} tracks matched by category feel.`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Search failed: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+}
 
 clearCacheButton.addEventListener("click", () => {
   localStorage.removeItem(CACHE_KEY);
@@ -298,7 +433,7 @@ function jsonp(url) {
   });
 }
 
-async function rankTracks(seed, tracks, mood) {
+async function rankTracks(seed, tracks, mood, similarity = 0.72) {
   const seedProfile = vibeProfile(seed, seed.audioFeatures);
   const analyzedTracks = await mapWithConcurrency(tracks.slice(0, AUDIO_ANALYSIS_LIMIT), 6, async (track) => ({
       ...track,
@@ -314,15 +449,15 @@ async function rankTracks(seed, tracks, mood) {
       const audioSimilarity = compareAudioFeatures(seed.audioFeatures, track.audioFeatures);
 
       if (audioSimilarity.available) {
-        score += Math.round(audioSimilarity.score * 82);
+        score += Math.round(audioSimilarity.score * (56 + similarity * 42));
         reasons.push(audioSimilarity.reason);
       } else if (seed.audioFeatures) {
-        score -= 24;
+        score -= Math.round(10 + similarity * 22);
       }
 
       const moodMatch = inferMood(track, track.audioFeatures) === mood;
       if (moodMatch) {
-        score += audioSimilarity.available ? 10 : 30;
+        score += audioSimilarity.available ? 8 + Math.round((1 - similarity) * 8) : 24;
         reasons.push(`${moodLabels[mood]} emotional profile`);
       }
 
@@ -343,7 +478,7 @@ async function rankTracks(seed, tracks, mood) {
       }
 
       if (same(seed.primaryGenreName, track.primaryGenreName)) {
-        score += audioSimilarity.available ? 5 : 24;
+        score += audioSimilarity.available ? Math.round(3 + (1 - similarity) * 10) : 24;
         reasons.push(`nearby sound: ${track.primaryGenreName}`);
       }
 
@@ -366,9 +501,9 @@ async function rankTracks(seed, tracks, mood) {
     })
     .sort((a, b) => b.score - a.score);
 
-  const audioRanked = ranked.filter((track) => track.audioFeatures && track.score >= 56);
+  const audioRanked = ranked.filter((track) => track.audioFeatures && track.score >= 48 + similarity * 12);
   const fallbackRanked = ranked.filter((track) => !track.audioFeatures && track.score >= 42);
-  const primary = diversifyTracks(audioRanked, 12, { strict: true });
+  const primary = diversifyTracks(audioRanked, 12, { strict: similarity > 0.55 });
 
   if (primary.length >= 6) {
     return primary;
@@ -462,6 +597,71 @@ function prioritizeCandidatePool(seed, tracks) {
       return { ...track, candidatePriority: priority };
     })
     .sort((a, b) => b.candidatePriority - a.candidatePriority);
+}
+
+function prioritizeCategoryPool(category, tracks) {
+  const family = categoryTerms[category] || [category];
+
+  return tracks
+    .map((track, index) => {
+      const genre = normalize(track.primaryGenreName);
+      const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
+      let priority = Math.max(0, 110 - index);
+
+      if (track.previewUrl) priority += 70;
+      if (family.some((term) => genre.includes(normalize(term)) || text.includes(normalize(term)))) {
+        priority += 45;
+      }
+      if (isLowQualityVariant(track)) priority -= 120;
+
+      return { ...track, candidatePriority: priority };
+    })
+    .sort((a, b) => b.candidatePriority - a.candidatePriority);
+}
+
+function rankCategoryTracks(category, tracks, selectedMood, similarity) {
+  const family = categoryTerms[category] || [category];
+  const wantedMood = selectedMood === "auto" ? null : selectedMood;
+  const ranked = tracks
+    .map((track) => {
+      const profile = vibeProfile(track, track.audioFeatures);
+      const genre = normalize(track.primaryGenreName);
+      const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
+      let score = track.audioFeatures ? 45 : 18;
+
+      if (family.some((term) => genre.includes(normalize(term)) || text.includes(normalize(term)))) {
+        score += 34;
+      }
+      if (wantedMood && profile.mood === wantedMood) {
+        score += 18;
+      }
+      if (track.audioFeatures) {
+        score += Math.round((track.audioFeatures.energy + track.audioFeatures.pulse) * 12);
+      }
+      if (isLowQualityVariant(track)) {
+        score -= 35;
+      }
+
+      return {
+        ...track,
+        score: Math.min(score, 99),
+        mood: profile.mood,
+        profile,
+        analysis: categoryAnalysis(track, category, profile),
+      };
+    })
+    .filter((track) => track.score >= 42)
+    .sort((a, b) => b.score - a.score);
+
+  return diversifyTracks(ranked, similarity > 0.65 ? 10 : 12, { strict: similarity > 0.65 });
+}
+
+function categoryAnalysis(track, category, profile) {
+  const audioLine = track.audioFeatures
+    ? "Its preview was analyzed for energy, pulse, brightness, and warmth."
+    : "It is included from category relevance because the preview could not be analyzed.";
+
+  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} This makes it fit the ${category} lane while keeping its own identity.`;
 }
 
 function isLowQualityVariant(track) {
@@ -587,17 +787,23 @@ function renderSeed(track) {
 
 function renderResults(tracks) {
   results.innerHTML = "";
+  currentTracks.clear();
 
   for (const track of tracks) {
     const node = template.content.cloneNode(true);
+    const article = node.querySelector(".track-card");
+    const trackKey = String(track.trackId || `${track.artistName}-${track.trackName}`);
+    currentTracks.set(trackKey, track);
+    article.dataset.trackId = trackKey;
     node.querySelector(".cover").src = artwork(track, 300);
-    node.querySelector(".cover").alt = `Capa de ${track.trackName}`;
+    node.querySelector(".cover").alt = `Cover of ${track.trackName}`;
     node.querySelector(".match-score").textContent = `${Math.round(track.score)}% match`;
     node.querySelector(".mood-tag").textContent =
       `${moodLabels[track.mood]} / ${track.profile.texture} ${track.profile.pace}`;
     node.querySelector("h3").textContent = track.trackName;
     node.querySelector(".artist").textContent = `${track.artistName} - ${track.primaryGenreName || "Unknown genre"}`;
     node.querySelector(".why").textContent = track.analysis;
+    node.querySelector(".vibe-bars").innerHTML = vibeBars(track);
 
     const audio = node.querySelector("audio");
     if (track.previewUrl) {
@@ -609,6 +815,7 @@ function renderResults(tracks) {
     const link = node.querySelector("a");
     link.href = track.trackViewUrl;
     link.textContent = "Open in iTunes";
+    node.querySelector(".favorite").textContent = isFavorite(track) ? "Saved" : "Save";
 
     results.appendChild(node);
   }
@@ -763,7 +970,124 @@ function setStatus(message) {
 
 function setLoading(isLoading, message) {
   form.querySelector("button").disabled = isLoading;
+  categoryButton.disabled = isLoading;
+  surpriseButton.disabled = isLoading;
   if (message) setStatus(message);
+}
+
+function similarityValue() {
+  return Number(similarityInput.value) / 100;
+}
+
+function updateSimilarityLabel() {
+  const value = similarityValue();
+  if (value < 0.35) similarityLabel.textContent = "wider discovery";
+  else if (value < 0.7) similarityLabel.textContent = "balanced match";
+  else similarityLabel.textContent = "closer sound";
+}
+
+function vibeBars(track) {
+  const features = track.audioFeatures || fallbackFeatures(track.profile || vibeProfile(track));
+  const meters = [
+    ["Energy", features.energy],
+    ["Pulse", features.pulse],
+    ["Brightness", features.brightness],
+    ["Warmth", features.warmth],
+  ];
+
+  return meters
+    .map(
+      ([label, value]) => `
+        <div class="vibe-meter">
+          <span>${label}</span>
+          <div class="meter-track"><div class="meter-fill" style="--value: ${Math.round(
+            clamp(value, 0, 1) * 100,
+          )}%"></div></div>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function fallbackFeatures(profile) {
+  const moodValues = {
+    melancholic: { energy: 0.34, pulse: 0.34, brightness: 0.28, warmth: 0.52 },
+    romantic: { energy: 0.46, pulse: 0.42, brightness: 0.48, warmth: 0.72 },
+    energetic: { energy: 0.82, pulse: 0.76, brightness: 0.62, warmth: 0.48 },
+    calm: { energy: 0.26, pulse: 0.24, brightness: 0.44, warmth: 0.62 },
+    dark: { energy: 0.48, pulse: 0.42, brightness: 0.22, warmth: 0.34 },
+    bright: { energy: 0.62, pulse: 0.58, brightness: 0.82, warmth: 0.56 },
+  };
+
+  return moodValues[profile.mood] || moodValues.calm;
+}
+
+function addHistory(query) {
+  const history = readList(HISTORY_KEY).filter((item) => item !== query);
+  history.unshift(query);
+  writeList(HISTORY_KEY, history.slice(0, 8));
+  renderHistory();
+}
+
+function renderHistory() {
+  const history = readList(HISTORY_KEY);
+  historyList.innerHTML = history.length
+    ? history
+        .map((query) => `<button type="button" data-query="${escapeHtml(query)}">${escapeHtml(query)}</button>`)
+        .join("")
+    : `<span class="empty-chip">No searches yet</span>`;
+}
+
+function toggleFavorite(track) {
+  const favorites = readList(FAVORITES_KEY);
+  const key = favoriteKey(track);
+  const exists = favorites.some((item) => item.key === key);
+  const next = exists
+    ? favorites.filter((item) => item.key !== key)
+    : [
+        {
+          key,
+          query: `${track.trackName} ${track.artistName}`,
+          label: `${track.trackName} - ${track.artistName}`,
+        },
+        ...favorites,
+      ].slice(0, 10);
+
+  writeList(FAVORITES_KEY, next);
+}
+
+function renderFavorites() {
+  const favorites = readList(FAVORITES_KEY);
+  favoritesList.innerHTML = favorites.length
+    ? favorites
+        .map(
+          (item) =>
+            `<button type="button" data-query="${escapeHtml(item.query)}">${escapeHtml(item.label)}</button>`,
+        )
+        .join("")
+    : `<span class="empty-chip">No favorites saved</span>`;
+}
+
+function isFavorite(track) {
+  const key = favoriteKey(track);
+  return readList(FAVORITES_KEY).some((item) => item.key === key);
+}
+
+function favoriteKey(track) {
+  return String(track.trackId || `${normalize(track.artistName)}-${normalize(track.trackName)}`);
+}
+
+function readList(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "[]");
+  } catch (error) {
+    localStorage.removeItem(key);
+    return [];
+  }
+}
+
+function writeList(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
 }
 
 async function analyzeTrackAudio(track) {

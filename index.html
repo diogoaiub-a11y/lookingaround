@@ -58,12 +58,48 @@
               </select>
             </label>
 
+            <label class="range-control">
+              Match style
+              <input id="similarity" type="range" min="0" max="100" value="72" />
+              <span id="similarity-label">closer sound</span>
+            </label>
+
+            <label>
+              Category
+              <select id="category">
+                <option value="pop">Pop</option>
+                <option value="r&b">R&B / Soul</option>
+                <option value="rock">Rock</option>
+                <option value="hip-hop">Hip-Hop</option>
+                <option value="dance">Dance / Electronic</option>
+                <option value="indie">Indie / Alternative</option>
+                <option value="latin">Latin</option>
+                <option value="calm">Calm</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+
+          </div>
+          <div class="quick-actions">
+            <button id="category-button" type="button">Explore category</button>
+            <button id="surprise-button" type="button">Surprise me</button>
           </div>
         </form>
       </section>
 
       <section class="status-area" aria-live="polite">
           <p id="status-text">Ready to find a vibe.</p>
+      </section>
+
+      <section class="library-section">
+        <div>
+          <h2>Recently searched</h2>
+          <div id="history-list" class="chip-list"></div>
+        </div>
+        <div>
+          <h2>Favorites</h2>
+          <div id="favorites-list" class="chip-list"></div>
+        </div>
       </section>
 
       <section class="seed-section" id="seed-section" hidden>
@@ -93,15 +129,20 @@
           <h3></h3>
           <p class="artist"></p>
           <p class="why"></p>
+          <div class="vibe-bars"></div>
           <div class="actions">
             <audio controls preload="none"></audio>
-            <a target="_blank" rel="noreferrer">Abrir no iTunes</a>
+            <div class="card-buttons">
+              <button class="more-like" type="button">More like this</button>
+              <button class="favorite" type="button">Save</button>
+              <a target="_blank" rel="noreferrer">Open in iTunes</a>
+            </div>
           </div>
           <small>Preview provided courtesy of iTunes.</small>
         </div>
       </article>
     </template>
 
-    <script src="app.js?v=vibingecho-audio-rank-v5"></script>
+    <script src="app.js?v=vibingecho-explore-v6"></script>
   </body>
 </html>

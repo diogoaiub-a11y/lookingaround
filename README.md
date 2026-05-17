@@ -16,6 +16,9 @@ It does not need a backend, manual database, Java, Node, or API key.
   pacing, and texture.
 - The final list is diversified so the results do not all repeat the same artist
   or the exact same vibe profile.
+- Users can adjust how close the match should be, explore by category, ask for a
+  surprise recommendation, save favorites, revisit recent searches, and use
+  "More like this" from any recommendation.
 - The browser keeps a local cache for 24 hours to avoid repeated calls.
 
 ## Deploy to Vercel
