@@ -16,11 +16,11 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-no-energy-v12";
+const APP_VERSION = "vibingecho-essence-gate-v14";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v12";
+const CACHE_KEY = "vibingecho-cache-v14";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -530,14 +530,15 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
       const vibes = trackVibes(track, profile);
       const sharedVibes = intersection(seedVibes, vibes);
       const sharedFamilies = intersection(seedFamilies, soundFamilies(track));
+      const sharedCoreFamilies = coreSoundFamilies(sharedFamilies);
       const audioSimilarity = compareAudioFeatures(seed.audioFeatures, track.audioFeatures);
       const criterionMatches = audioSimilarity.criteria || [];
 
       if (audioSimilarity.available) {
-        score += Math.round(audioSimilarity.score * (56 + similarity * 42));
+        score += Math.round(audioSimilarity.score * 100);
         reasons.push(audioSimilarity.reason);
       } else if (seed.audioFeatures) {
-        score -= Math.round(10 + similarity * 22);
+        score -= 42;
       }
 
       const moodMatch = inferMood(track, track.audioFeatures) === mood;
@@ -567,7 +568,7 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         reasons.push(`nearby sound: ${track.primaryGenreName}`);
       }
 
-      score += Math.min(sharedFamilies.length * 16, 36);
+      score += Math.min(sharedFamilies.length * 8, 18);
       if (sharedFamilies.length) {
         reasons.push(`${sharedFamilies.length} shared sound families`);
       }
@@ -576,21 +577,23 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         score += 4;
       }
 
-      score += Math.min(sharedTags.length * Math.round(4 + similarity * 8), 42);
+      score += Math.min(sharedTags.length * 4, 18);
       if (sharedTags.length) {
         reasons.push(`${sharedTags.length} shared categories`);
       }
 
-      score += Math.min(sharedVibes.length * 18, 54);
+      score += Math.min(sharedVibes.length * 8, 24);
       if (sharedVibes.length) {
         reasons.push(`${sharedVibes.length} shared vibes`);
       }
+
+      score -= essenceMismatchPenalty(seedVibes, vibes, seedFamilies, soundFamilies(track));
 
       if (isLowQualityVariant(track)) {
         score -= 35;
       }
 
-      score += Math.round(discoveryScore(track, tags) * 0.22);
+      score += Math.round(discoveryScore(track, tags) * 0.08);
 
       return {
         ...track,
@@ -603,8 +606,10 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         vibes,
         sharedVibes,
         sharedFamilies,
+        sharedCoreFamilies,
         criterionMatches,
         audioMatchScore: audioSimilarity.score,
+        essencePassed: essencePassed(audioSimilarity, sharedVibes, sharedFamilies),
         matchPercent: matchPercent(audioSimilarity, sharedVibes, sharedFamilies, profile, seedProfile),
         analysis: vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags, sharedVibes, sharedFamilies),
       };
@@ -615,15 +620,16 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
     const mainstream = mainstreamArtists.has(normalize(track.artistName));
     return (
       track.audioFeatures &&
-      track.audioMatchScore >= 0.78 &&
+      track.essencePassed &&
+      track.audioMatchScore >= 0.8 &&
       track.sharedVibes.length >= 2 &&
-      track.sharedFamilies.length >= 1 &&
-      track.score >= (mainstream ? 78 : 58 + similarity * 8)
+      (track.sharedCoreFamilies.length >= 1 || (track.audioMatchScore >= 0.9 && track.sharedVibes.length >= 4)) &&
+      track.score >= (mainstream ? 82 : 70)
     );
   });
   const fallbackRanked = ranked.filter((track) => {
     const mainstream = mainstreamArtists.has(normalize(track.artistName));
-    return !track.audioFeatures && track.sharedVibes.length >= 3 && track.score >= (mainstream ? 76 : 54);
+    return !track.audioFeatures && track.sharedVibes.length >= 4 && track.sharedFamilies.length >= 1 && track.score >= (mainstream ? 78 : 62);
   });
   const primary = diversifyTracks(audioRanked, 12, { strict: false });
 
@@ -900,8 +906,11 @@ function trackVibes(track, profile = vibeProfile(track, track.audioFeatures)) {
   if (/metal|punk|hard rock|rage|riot|fight/.test(`${genre} ${text}`)) vibes.add("aggressive");
   if (/r&b|soul|quiet storm|body|touch|slow/.test(`${genre} ${text}`)) vibes.add("sensual");
   if (/soundtrack|score|cinematic|theme|epic/.test(`${genre} ${text}`)) vibes.add("cinematic");
+  if (/dramatic|ballad|power ballad|anthem|beautiful/.test(`${genre} ${text}`)) vibes.add("dramatic");
   if (/alone|lonely|empty|lost|gone|blues/.test(`${genre} ${text}`)) vibes.add("lonely");
   if (/house|edm|dance|club|anthem|euphoric/.test(`${genre} ${text}`)) vibes.add("euphoric");
+  if (/dance|club|house|edm|disco/.test(`${genre} ${text}`)) vibes.add("dance");
+  if (/club|party|summer/.test(`${genre} ${text}`)) vibes.add("club");
 
   return [...vibes].filter(Boolean);
 }
@@ -962,13 +971,13 @@ function soundFamilies(track) {
 }
 
 function matchPercent(audioSimilarity, sharedVibes, sharedFamilies, profile, seedProfile) {
-  const audioBase = audioSimilarity.available ? audioSimilarity.score * 66 : 28;
+  const audioBase = audioSimilarity.available ? audioSimilarity.score * 76 : 22;
   const vibeBase = Math.min(sharedVibes.length * 6, 18);
   const familyBase = Math.min(sharedFamilies.length * 6, 12);
   const profileBase =
     (profile.pace === seedProfile.pace ? 3 : 0) + (profile.texture === seedProfile.texture ? 3 : 0);
 
-  return Math.round(clamp(audioBase + vibeBase + familyBase + profileBase, 18, 96));
+  return Math.round(clamp(audioBase + vibeBase + familyBase + profileBase, 12, 94));
 }
 
 function isLowQualityVariant(track) {
@@ -1124,7 +1133,7 @@ function renderResults(tracks) {
     article.dataset.trackId = trackKey;
     node.querySelector(".cover").src = artwork(track, 300);
     node.querySelector(".cover").alt = `Cover of ${track.trackName}`;
-    node.querySelector(".match-score").textContent = `${Math.round(track.matchPercent || track.score)}% match`;
+    node.querySelector(".match-score").textContent = `${Math.round(track.matchPercent || track.score)}% essence`;
     node.querySelector(".mood-tag").textContent =
       `${moodLabels[track.mood]} / ${track.profile.texture} ${track.profile.pace}`;
     node.querySelector("h3").textContent = track.trackName;
@@ -1519,6 +1528,7 @@ function extractAudioFeatures(samples, sampleRate) {
   const structureMotion = sectionMotion(energies);
   const motifRepetition = repetitionScore(energies);
   const vocalPresence = clamp((1 - bass) * 0.32 + warmth * 0.34 + brightness * 0.18 + treble * 0.16, 0, 1);
+  const chroma = chromaProfile(samples, sampleRate);
 
   return {
     brightness,
@@ -1532,6 +1542,7 @@ function extractAudioFeatures(samples, sampleRate) {
     structureMotion,
     motifRepetition,
     vocalPresence,
+    chroma,
     loudness: clamp((totalAbs / Math.max(energies.length, 1)) * 8, 0, 1),
     sampleRate,
   };
@@ -1565,7 +1576,7 @@ function audioCriteria(seed, track) {
       key: "tonalityHarmony",
       label: "tonality/harmony color",
       weight: 0.11,
-      score: closeness(seed.warmth, track.warmth, 1.05) * 0.55 + closeness(seed.brightness, track.brightness, 1.05) * 0.45,
+      score: chromaSimilarity(seed.chroma, track.chroma) * 0.68 + closeness(seed.warmth, track.warmth, 1.05) * 0.18 + closeness(seed.brightness, track.brightness, 1.05) * 0.14,
     },
     {
       key: "bpmRhythm",
@@ -1601,7 +1612,7 @@ function audioCriteria(seed, track) {
       key: "melody",
       label: "melodic contour",
       weight: 0.08,
-      score: closeness(seed.brightness, track.brightness, 0.9) * 0.45 + closeness(seed.treble, track.treble, 0.9) * 0.35 + closeness(seed.warmth, track.warmth, 0.8) * 0.2,
+      score: chromaSimilarity(seed.chroma, track.chroma) * 0.5 + closeness(seed.brightness, track.brightness, 0.9) * 0.25 + closeness(seed.treble, track.treble, 0.9) * 0.25,
     },
     {
       key: "emotionalEnergy",
@@ -1638,6 +1649,130 @@ function audioCriteria(seed, track) {
 
 function closeness(first = 0, second = 0, sharpness = 1) {
   return clamp(1 - Math.abs(first - second) * sharpness, 0, 1);
+}
+
+function essencePassed(audioSimilarity, sharedVibes, sharedFamilies) {
+  if (!audioSimilarity.available) return false;
+
+  const criteria = Object.fromEntries(audioSimilarity.criteria.map((item) => [item.key, item.score]));
+  const coreFamilies = coreSoundFamilies(sharedFamilies);
+  const rhythmCore = average([
+    criteria.bpmRhythm || 0,
+    criteria.drumsPercussion || 0,
+    criteria.repetitiveMotifs || 0,
+  ]);
+  const soundCore = average([
+    criteria.timbre || 0,
+    criteria.textureProduction || 0,
+    criteria.frequencyRange || 0,
+  ]);
+  const emotionCore = average([
+    criteria.tonalityHarmony || 0,
+    criteria.emotionalEnergy || 0,
+    criteria.dynamics || 0,
+  ]);
+
+  return (
+    audioSimilarity.score >= 0.8 &&
+    rhythmCore >= 0.74 &&
+    soundCore >= 0.74 &&
+    emotionCore >= 0.68 &&
+    (criteria.tonalityHarmony || 0) >= 0.62 &&
+    (criteria.frequencyRange || 0) >= 0.72 &&
+    (criteria.timbre || 0) >= 0.72 &&
+    sharedVibes.length >= 2 &&
+    (coreFamilies.length >= 1 || (audioSimilarity.score >= 0.9 && sharedVibes.length >= 4))
+  );
+}
+
+function coreSoundFamilies(families) {
+  return families.filter((family) => family !== "pop");
+}
+
+function essenceMismatchPenalty(seedVibes, trackVibesList, seedFamilies, trackFamilies) {
+  const seedSet = new Set(seedVibes);
+  const trackSet = new Set(trackVibesList);
+  let penalty = 0;
+
+  const seedCore = coreSoundFamilies(seedFamilies);
+  const trackCore = coreSoundFamilies(trackFamilies);
+
+  if (!intersection(seedCore, trackCore).length && seedFamilies.includes("pop") && trackFamilies.includes("pop")) {
+    penalty += 28;
+  }
+
+  for (const vibe of ["club", "dance", "sensual", "euphoric"]) {
+    if (trackSet.has(vibe) && !seedSet.has(vibe)) penalty += 16;
+  }
+
+  for (const vibe of ["cinematic", "lonely", "melancholic", "dramatic"]) {
+    if (seedSet.has(vibe) && !trackSet.has(vibe)) penalty += 12;
+  }
+
+  return penalty;
+}
+
+function chromaProfile(samples, sampleRate) {
+  const chroma = Array(12).fill(0);
+  const frameSize = 4096;
+  const frameCount = 10;
+  const usableLength = Math.max(samples.length - frameSize, 1);
+
+  for (let frame = 0; frame < frameCount; frame++) {
+    const start = Math.floor((usableLength * frame) / frameCount);
+
+    for (let midi = 40; midi <= 76; midi++) {
+      const frequency = 440 * 2 ** ((midi - 69) / 12);
+      const magnitude = goertzelMagnitude(samples, start, frameSize, sampleRate, frequency);
+      chroma[midi % 12] += magnitude;
+    }
+  }
+
+  const total = chroma.reduce((sum, value) => sum + value, 0) || 1;
+  return chroma.map((value) => value / total);
+}
+
+function goertzelMagnitude(samples, start, frameSize, sampleRate, frequency) {
+  const omega = (2 * Math.PI * frequency) / sampleRate;
+  const coeff = 2 * Math.cos(omega);
+  let q0 = 0;
+  let q1 = 0;
+  let q2 = 0;
+
+  for (let index = 0; index < frameSize; index++) {
+    const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (frameSize - 1));
+    q0 = coeff * q1 - q2 + (samples[start + index] || 0) * window;
+    q2 = q1;
+    q1 = q0;
+  }
+
+  return Math.sqrt(q1 * q1 + q2 * q2 - q1 * q2 * coeff);
+}
+
+function chromaSimilarity(first = [], second = []) {
+  if (!first.length || !second.length) return 0.5;
+  let best = 0;
+
+  for (let shift = 0; shift < 12; shift++) {
+    const shifted = second.map((_, index) => second[(index + shift) % 12]);
+    best = Math.max(best, cosineSimilarity(first, shifted));
+  }
+
+  return best;
+}
+
+function cosineSimilarity(first, second) {
+  let dot = 0;
+  let left = 0;
+  let right = 0;
+
+  for (let index = 0; index < first.length; index++) {
+    dot += first[index] * second[index];
+    left += first[index] * first[index];
+    right += second[index] * second[index];
+  }
+
+  return dot / (Math.sqrt(left) * Math.sqrt(right) || 1);
 }
 
 function average(values) {
