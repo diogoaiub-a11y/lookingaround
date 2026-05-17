@@ -25,8 +25,9 @@ It does not need a backend, manual database, Java, Node, or API key.
 - Discovery is prioritized: less obvious artists and mid-ranked iTunes results
   receive a boost, while very mainstream artists are kept only when the match is
   strong.
-- Candidate searches now include deep-cut, underground, lesser-known, and
-  emerging-artist terms to produce broader recommendations.
+- Song-based recommendations stay close to the reference by requiring audio
+  similarity and multiple shared vibes. Category exploration can still use
+  deep-cut and emerging-artist terms for broader discovery.
 - The browser keeps a local cache for 24 hours to avoid repeated calls.
 
 ## Deploy to Vercel

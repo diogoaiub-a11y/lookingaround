@@ -16,11 +16,11 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-deep-cuts-v9";
+const APP_VERSION = "vibingecho-vibe-match-v10";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v9";
+const CACHE_KEY = "vibingecho-cache-v10";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -34,6 +34,14 @@ const moodLabels = {
   calm: "calm",
   dark: "dark",
   bright: "bright",
+  dreamy: "dreamy",
+  nostalgic: "nostalgic",
+  groovy: "groovy",
+  aggressive: "aggressive",
+  sensual: "sensual",
+  cinematic: "cinematic",
+  lonely: "lonely",
+  euphoric: "euphoric",
 };
 
 const moodLexicon = {
@@ -75,6 +83,14 @@ const moodLexicon = {
   calm: ["acoustic", "sleep", "dream", "soft", "quiet", "slow", "piano", "calm"],
   dark: ["dark", "black", "devil", "ghost", "bad", "blood", "grave", "shadow"],
   bright: ["sun", "summer", "happy", "gold", "light", "good", "sweet", "dia"],
+  dreamy: ["dream", "space", "moon", "cloud", "float", "sleep", "haze", "blue"],
+  nostalgic: ["old", "remember", "again", "yesterday", "home", "back", "memory"],
+  groovy: ["groove", "funk", "move", "bass", "dance", "boogie", "rhythm"],
+  aggressive: ["fight", "rage", "war", "kill", "hard", "loud", "break", "riot"],
+  sensual: ["body", "touch", "slow", "skin", "kiss", "bed", "desire", "close"],
+  cinematic: ["theme", "score", "film", "epic", "dream", "intro", "finale"],
+  lonely: ["alone", "lonely", "without", "missing", "empty", "lost", "gone"],
+  euphoric: ["alive", "higher", "light", "forever", "free", "gold", "heaven"],
 };
 
 const genreMoodHints = {
@@ -84,6 +100,14 @@ const genreMoodHints = {
   calm: ["acoustic", "classical", "jazz", "ambient", "new age"],
   dark: ["metal", "industrial", "punk", "hard rock", "trap"],
   bright: ["reggae", "ska", "disco", "k-pop", "j-pop"],
+  dreamy: ["dream pop", "ambient", "shoegaze", "indie", "synth pop"],
+  nostalgic: ["classic rock", "new wave", "soul", "folk", "80s pop"],
+  groovy: ["funk", "disco", "r&b", "soul", "dance"],
+  aggressive: ["metal", "punk", "hard rock", "trap", "industrial"],
+  sensual: ["r&b", "soul", "quiet storm", "latin", "neo soul"],
+  cinematic: ["soundtrack", "score", "classical", "ambient", "post-rock"],
+  lonely: ["folk", "blues", "singer/songwriter", "indie", "alternative"],
+  euphoric: ["dance", "house", "pop", "edm", "disco"],
 };
 
 const moodAnalysis = {
@@ -93,6 +117,14 @@ const moodAnalysis = {
   calm: "keeps the mood soft, steady, and spacious",
   dark: "carries a heavier and more shadowed atmosphere",
   bright: "feels lighter, open, and more uplifting",
+  dreamy: "feels hazy, floating, and slightly unreal",
+  nostalgic: "carries a memory-soaked, looking-back feeling",
+  groovy: "moves with a body-led groove and pocket",
+  aggressive: "hits with a sharper, harder emotional edge",
+  sensual: "feels slow-burning, close, and tactile",
+  cinematic: "opens up like a scene or soundtrack moment",
+  lonely: "sits in a more isolated and inward emotional space",
+  euphoric: "builds toward a lifted, release-heavy feeling",
 };
 
 const paceAnalysis = {
@@ -480,6 +512,7 @@ function jsonp(url) {
 async function rankTracks(seed, tracks, mood, similarity = 0.72) {
   const seedProfile = vibeProfile(seed, seed.audioFeatures);
   const seedTags = trackTags(seed, seedProfile);
+  const seedVibes = trackVibes(seed, seedProfile);
   const analyzedTracks = await mapWithConcurrency(tracks.slice(0, AUDIO_ANALYSIS_LIMIT), 6, async (track) => ({
       ...track,
       audioFeatures: await analyzeTrackAudio(track),
@@ -493,6 +526,8 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
       const profile = vibeProfile(track, track.audioFeatures);
       const tags = trackTags(track, profile);
       const sharedTags = intersection(seedTags, tags);
+      const vibes = trackVibes(track, profile);
+      const sharedVibes = intersection(seedVibes, vibes);
       const audioSimilarity = compareAudioFeatures(seed.audioFeatures, track.audioFeatures);
 
       if (audioSimilarity.available) {
@@ -538,11 +573,16 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         reasons.push(`${sharedTags.length} shared categories`);
       }
 
+      score += Math.min(sharedVibes.length * 18, 54);
+      if (sharedVibes.length) {
+        reasons.push(`${sharedVibes.length} shared vibes`);
+      }
+
       if (isLowQualityVariant(track)) {
         score -= 35;
       }
 
-      score += discoveryScore(track, tags);
+      score += Math.round(discoveryScore(track, tags) * 0.22);
 
       return {
         ...track,
@@ -552,26 +592,34 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         profile,
         tags,
         sharedTags,
-        analysis: vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags),
+        vibes,
+        sharedVibes,
+        audioMatchScore: audioSimilarity.score,
+        analysis: vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags, sharedVibes),
       };
     })
     .sort((a, b) => b.score - a.score);
 
   const audioRanked = ranked.filter((track) => {
     const mainstream = mainstreamArtists.has(normalize(track.artistName));
-    return track.audioFeatures && track.score >= (mainstream ? 72 : 46 + similarity * 8);
+    return (
+      track.audioFeatures &&
+      track.audioMatchScore >= 0.72 &&
+      track.sharedVibes.length >= 2 &&
+      track.score >= (mainstream ? 78 : 58 + similarity * 8)
+    );
   });
   const fallbackRanked = ranked.filter((track) => {
     const mainstream = mainstreamArtists.has(normalize(track.artistName));
-    return !track.audioFeatures && track.score >= (mainstream ? 68 : 36);
+    return !track.audioFeatures && track.sharedVibes.length >= 3 && track.score >= (mainstream ? 76 : 54);
   });
-  const primary = diversifyTracks(audioRanked, 14, { strict: false });
+  const primary = diversifyTracks(audioRanked, 12, { strict: false });
 
-  if (primary.length >= 10) {
+  if (primary.length >= 8) {
     return primary;
   }
 
-  return diversifyTracks([...primary, ...fallbackRanked], 14, { strict: false });
+  return diversifyTracks([...primary, ...fallbackRanked], 12, { strict: false });
 }
 
 function diversifyTracks(tracks, limit, options = {}) {
@@ -615,15 +663,11 @@ function candidateSearchTerms(seed, mood) {
   const terms = [
     genre,
     ...genreFamily(normalizedGenre),
-    ...genreMoodHints[mood].slice(0, 2),
-    `${genre} deep cuts`,
-    `${genre} indie`,
-    `${genre} underground`,
-    `${genre} emerging artists`,
+    ...genreMoodHints[mood].slice(0, 3),
     `${moodLabels[mood]} ${genre}`,
   ];
 
-  return [...new Set(terms.filter(Boolean).map((term) => term.trim()).filter(Boolean))].slice(0, 12);
+  return [...new Set(terms.filter(Boolean).map((term) => term.trim()).filter(Boolean))].slice(0, 9);
 }
 
 function genreFamily(genre) {
@@ -813,6 +857,39 @@ function trackTags(track, profile = vibeProfile(track, track.audioFeatures)) {
   return [...tags].filter(Boolean);
 }
 
+function trackVibes(track, profile = vibeProfile(track, track.audioFeatures)) {
+  const vibes = new Set([profile.mood, profile.pace, profile.texture]);
+  const genre = normalize(track.primaryGenreName);
+  const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
+  const features = track.audioFeatures;
+
+  if (features) {
+    if (features.energy > 0.72 && features.pulse > 0.58) vibes.add("energetic");
+    if (features.energy > 0.62 && features.brightness > 0.62) vibes.add("euphoric");
+    if (features.energy < 0.36 && features.pulse < 0.42) vibes.add("calm");
+    if (features.energy < 0.42 && features.brightness < 0.42) vibes.add("melancholic");
+    if (features.brightness < 0.34 && features.dynamics > 0.38) vibes.add("dark");
+    if (features.brightness > 0.64) vibes.add("bright");
+    if (features.warmth > 0.58 && features.energy < 0.62) vibes.add("romantic");
+    if (features.warmth > 0.62 && features.pulse < 0.55) vibes.add("sensual");
+    if (features.pulse > 0.58 && features.warmth > 0.45) vibes.add("groovy");
+    if (features.dynamics > 0.58 && features.energy > 0.58) vibes.add("aggressive");
+    if (features.brightness < 0.44 && features.pulse < 0.45) vibes.add("dreamy");
+    if (features.energy < 0.45 && features.warmth > 0.48) vibes.add("lonely");
+  }
+
+  if (/dream|moon|space|haze|ambient|shoegaze|dream pop/.test(`${genre} ${text}`)) vibes.add("dreamy");
+  if (/classic|80s|90s|remember|memory|yesterday|old/.test(`${genre} ${text}`)) vibes.add("nostalgic");
+  if (/funk|disco|groove|boogie|bass/.test(`${genre} ${text}`)) vibes.add("groovy");
+  if (/metal|punk|hard rock|rage|riot|fight/.test(`${genre} ${text}`)) vibes.add("aggressive");
+  if (/r&b|soul|quiet storm|body|touch|slow/.test(`${genre} ${text}`)) vibes.add("sensual");
+  if (/soundtrack|score|cinematic|theme|epic/.test(`${genre} ${text}`)) vibes.add("cinematic");
+  if (/alone|lonely|empty|lost|gone|blues/.test(`${genre} ${text}`)) vibes.add("lonely");
+  if (/house|edm|dance|club|anthem|euphoric/.test(`${genre} ${text}`)) vibes.add("euphoric");
+
+  return [...vibes].filter(Boolean);
+}
+
 function intersection(first, second) {
   const secondSet = new Set(second);
   return first.filter((item) => secondSet.has(item));
@@ -900,7 +977,7 @@ function vibeProfile(track, features = null) {
   return { mood, pace, texture };
 }
 
-function vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags = []) {
+function vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags = [], sharedVibes = []) {
   const genre = track.primaryGenreName || "its genre";
   const seedMood = moodLabels[inferMood(seed, seed.audioFeatures)];
   const currentMood = moodLabels[profile.mood];
@@ -915,21 +992,29 @@ function vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags = []) {
   const tagLine = sharedTags.length
     ? `It also shares ${sharedTags.slice(0, 5).join(", ")} categories.`
     : "It has fewer category overlaps, so the match leans more on sound and mood.";
+  const vibeLine = sharedVibes.length
+    ? `Shared vibes: ${sharedVibes.slice(0, 5).join(", ")}.`
+    : "Its vibe overlap is lighter, so it only stays if the audio match is strong.";
   const discoveryLine = mainstreamArtists.has(normalize(track.artistName))
     ? "It is a more familiar pick, so it only stays when the match is strong."
     : "It gets a discovery boost for being a less obvious pick.";
 
-  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} ${tagLine} ${discoveryLine} In context, ${genre} keeps it distinct instead of just repeating the same match. ${contrast}`;
+  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} ${vibeLine} ${tagLine} ${discoveryLine} In context, ${genre} keeps it distinct instead of just repeating the same match. ${contrast}`;
 }
 
 function inferMood(track, features = null) {
   if (features) {
-    if (features.energy > 0.66 && features.pulse > 0.56) return "energetic";
-    if (features.energy < 0.34 && features.brightness < 0.46) return "melancholic";
-    if (features.energy < 0.38 && features.pulse < 0.42) return "calm";
-    if (features.brightness < 0.34 && features.dynamics > 0.42) return "dark";
-    if (features.brightness > 0.62 && features.energy > 0.44) return "bright";
+    if (features.energy > 0.78 && features.pulse > 0.62) return "energetic";
+    if (features.pulse > 0.58 && features.warmth > 0.5 && features.energy < 0.72) return "groovy";
+    if (features.energy > 0.62 && features.brightness > 0.66) return "euphoric";
+    if (features.dynamics > 0.6 && features.energy > 0.6 && features.brightness < 0.52) return "aggressive";
+    if (features.energy < 0.32 && features.pulse < 0.4) return "calm";
+    if (features.energy < 0.42 && features.brightness < 0.44) return "melancholic";
+    if (features.brightness < 0.34 && features.dynamics > 0.38) return "dark";
+    if (features.warmth > 0.62 && features.pulse < 0.55) return "sensual";
     if (features.warmth > 0.56 && features.energy < 0.62) return "romantic";
+    if (features.brightness < 0.44 && features.pulse < 0.45) return "dreamy";
+    if (features.brightness > 0.64 && features.energy > 0.42) return "bright";
   }
 
   const haystack = normalize(
@@ -1014,7 +1099,7 @@ function renderResults(tracks) {
 }
 
 function tagBadges(track) {
-  const tags = (track.sharedTags?.length ? track.sharedTags : track.tags || []).slice(0, 4);
+  const tags = (track.sharedVibes?.length ? track.sharedVibes : track.sharedTags?.length ? track.sharedTags : track.tags || []).slice(0, 5);
   return tags.map((tag) => `<span class="category-tag">${escapeHtml(tag)}</span>`).join("");
 }
 
