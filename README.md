@@ -10,7 +10,7 @@ It does not need a backend, manual database, Java, Node, or API key.
 - The reference track is chosen from repeated iTunes result relevance, exact-title
   matching, preview availability, and penalties for covers/karaoke/tribute/remix
   versions.
-- The app searches candidates by genre and vibe hints.
+- The app uses iTunes search only to collect candidate songs.
 - Recommendations are ranked by audio-preview similarity when iTunes provides a
   preview, using tonality/harmony color, BPM/rhythm, percussion pattern, timbre,
   texture/production, structure, melodic contour, emotional energy, dynamics,
@@ -20,12 +20,8 @@ It does not need a backend, manual database, Java, Node, or API key.
 - Users can adjust how close the match should be, explore by category, ask for a
   surprise recommendation, save favorites, revisit recent searches, and use
   "More like this" from any recommendation.
-- Songs receive multiple tags at once, such as genre family, mood, texture,
-  pace, era, and audio-feel tags. Recommendations connect songs with more
-  overlapping tags.
-- Discovery is prioritized: less obvious artists and mid-ranked iTunes results
-  receive a boost, while very mainstream artists are kept only when the match is
-  strong.
+- Song-match scoring does not use tags, popularity, artist, album, or generic
+  genre overlap.
 - Song-based recommendations stay close to the reference by comparing audio
   preview features such as beat pulse, bass weight, treble/high-end sharpness,
   punch, production texture, dynamics, and multiple shared vibes. Category
@@ -65,8 +61,8 @@ http://localhost:8080
 
 The iTunes API does not provide real audio analysis such as BPM, energy, or valence.
 That is why this project analyzes the public iTunes preview clips when possible
-and falls back to iTunes metadata, genres, duration, and a vibe-matching
-heuristic. Lyrics are not used as a matching criterion.
+and falls back to iTunes metadata only when collecting candidates. Lyrics are not
+used as a matching criterion.
 
 iTunes Search does not provide play counts, so "most listened" is approximated
 with search relevance, repeated appearances across searches, exact-title matching,

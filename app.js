@@ -1480,49 +1480,49 @@ function audioCriteria(seed, track) {
     {
       key: "tonalityHarmony",
       label: "tonality/harmony color",
-      weight: 0.11,
+      weight: 0.08,
       score: chromaSimilarity(seed.chroma, track.chroma) * 0.68 + closeness(seed.warmth, track.warmth, 1.05) * 0.18 + closeness(seed.brightness, track.brightness, 1.05) * 0.14,
     },
     {
       key: "bpmRhythm",
       label: "BPM and rhythm",
-      weight: 0.16,
-      score: closeness(seed.pulse, track.pulse, 1.25),
+      weight: 0.18,
+      score: closeness(seed.pulse, track.pulse, 1.65) * 0.72 + closeness(seed.pulseRegularity, track.pulseRegularity, 1.2) * 0.28,
     },
     {
       key: "drumsPercussion",
       label: "drum/percussion pattern",
-      weight: 0.14,
-      score: closeness(seed.pulse, track.pulse, 1.1) * 0.45 + closeness(seed.punch, track.punch, 1.15) * 0.55,
+      weight: 0.17,
+      score: closeness(seed.pulse, track.pulse, 1.45) * 0.35 + closeness(seed.punch, track.punch, 1.55) * 0.45 + closeness(seed.pulseRegularity, track.pulseRegularity, 1.25) * 0.2,
     },
     {
       key: "timbre",
       label: "timbre",
-      weight: 0.12,
-      score: closeness(seed.bass, track.bass, 1.1) * 0.35 + closeness(seed.treble, track.treble, 1.1) * 0.35 + closeness(seed.warmth, track.warmth, 1) * 0.3,
+      weight: 0.14,
+      score: closeness(seed.bass, track.bass, 1.5) * 0.35 + closeness(seed.treble, track.treble, 1.5) * 0.35 + closeness(seed.warmth, track.warmth, 1.2) * 0.3,
     },
     {
       key: "textureProduction",
       label: "texture/production",
       weight: 0.1,
-      score: closeness(seed.dynamics, track.dynamics, 1.1) * 0.35 + closeness(seed.brightness, track.brightness, 1) * 0.3 + closeness(seed.treble, track.treble, 1) * 0.35,
+      score: closeness(seed.dynamics, track.dynamics, 1.35) * 0.35 + closeness(seed.brightness, track.brightness, 1.25) * 0.3 + closeness(seed.treble, track.treble, 1.25) * 0.35,
     },
     {
       key: "structure",
       label: "structure",
-      weight: 0.08,
+      weight: 0.07,
       score: closeness(seed.structureMotion, track.structureMotion, 1.15) * 0.55 + closeness(seed.dynamics, track.dynamics, 1) * 0.45,
     },
     {
       key: "melody",
       label: "melodic contour",
-      weight: 0.08,
+      weight: 0.06,
       score: chromaSimilarity(seed.chroma, track.chroma) * 0.5 + closeness(seed.brightness, track.brightness, 0.9) * 0.25 + closeness(seed.treble, track.treble, 0.9) * 0.25,
     },
     {
       key: "emotionalEnergy",
       label: "emotional energy",
-      weight: 0.09,
+      weight: 0.08,
       score: closeness(seed.pulse, track.pulse, 1) * 0.3 + closeness(seed.dynamics, track.dynamics, 1) * 0.3 + closeness(seed.warmth, track.warmth, 1) * 0.4,
     },
     {
@@ -1534,19 +1534,19 @@ function audioCriteria(seed, track) {
     {
       key: "vocalStyle",
       label: "vocal style",
-      weight: 0.06,
+      weight: 0.05,
       score: closeness(seed.vocalPresence, track.vocalPresence, 1) * 0.5 + closeness(seed.treble, track.treble, 0.85) * 0.25 + closeness(seed.warmth, track.warmth, 0.85) * 0.25,
     },
     {
       key: "frequencyRange",
       label: "dominant frequency range",
-      weight: 0.12,
-      score: closeness(seed.bass, track.bass, 1.2) * 0.45 + closeness(seed.treble, track.treble, 1.2) * 0.45 + closeness(seed.brightness, track.brightness, 0.8) * 0.1,
+      weight: 0.14,
+      score: closeness(seed.bass, track.bass, 1.65) * 0.45 + closeness(seed.treble, track.treble, 1.65) * 0.45 + closeness(seed.brightness, track.brightness, 1.15) * 0.1,
     },
     {
       key: "repetitiveMotifs",
       label: "repetitive motifs",
-      weight: 0.07,
+      weight: 0.06,
       score: closeness(seed.motifRepetition, track.motifRepetition, 1.2) * 0.6 + closeness(seed.pulseRegularity, track.pulseRegularity, 1.1) * 0.4,
     },
   ];
@@ -1595,19 +1595,19 @@ function criteriaPassed(audioSimilarity) {
   const criteria = Object.fromEntries(audioSimilarity.criteria.map((item) => [item.key, item.score]));
 
   return (
-    audioSimilarity.score >= 0.76 &&
-    (criteria.tonalityHarmony || 0) >= 0.62 &&
-    (criteria.bpmRhythm || 0) >= 0.7 &&
-    (criteria.drumsPercussion || 0) >= 0.68 &&
-    (criteria.timbre || 0) >= 0.68 &&
-    (criteria.textureProduction || 0) >= 0.62 &&
-    (criteria.structure || 0) >= 0.52 &&
-    (criteria.melody || 0) >= 0.58 &&
-    (criteria.emotionalEnergy || 0) >= 0.62 &&
-    (criteria.dynamics || 0) >= 0.55 &&
-    (criteria.vocalStyle || 0) >= 0.52 &&
-    (criteria.frequencyRange || 0) >= 0.7 &&
-    (criteria.repetitiveMotifs || 0) >= 0.5
+    audioSimilarity.score >= 0.84 &&
+    (criteria.tonalityHarmony || 0) >= 0.7 &&
+    (criteria.bpmRhythm || 0) >= 0.82 &&
+    (criteria.drumsPercussion || 0) >= 0.8 &&
+    (criteria.timbre || 0) >= 0.78 &&
+    (criteria.textureProduction || 0) >= 0.72 &&
+    (criteria.structure || 0) >= 0.62 &&
+    (criteria.melody || 0) >= 0.68 &&
+    (criteria.emotionalEnergy || 0) >= 0.72 &&
+    (criteria.dynamics || 0) >= 0.65 &&
+    (criteria.vocalStyle || 0) >= 0.62 &&
+    (criteria.frequencyRange || 0) >= 0.8 &&
+    (criteria.repetitiveMotifs || 0) >= 0.62
   );
 }
 
