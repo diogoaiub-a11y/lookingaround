@@ -7,6 +7,8 @@ It does not need a backend, manual database, Java, Node, or API key.
 
 - The user types a song or artist.
 - The site calls `https://itunes.apple.com/search` without an API key.
+- The site maps songs to open-data IDs with ListenBrainz and MusicBrainz.
+- When available, AcousticBrainz features refine BPM/key/mood criteria.
 - The reference track is chosen from repeated iTunes result relevance, exact-title
   matching, preview availability, and penalties for covers/karaoke/tribute/remix
   versions.
@@ -59,10 +61,10 @@ http://localhost:8080
 
 ## Important note
 
-The iTunes API does not provide real audio analysis such as BPM, energy, or valence.
-That is why this project analyzes the public iTunes preview clips when possible
-and falls back to iTunes metadata only when collecting candidates. Lyrics are not
-used as a matching criterion.
+The iTunes API does not provide real audio analysis such as BPM, key, or valence.
+That is why this project analyzes the public iTunes preview clips, then enriches
+tracks with ListenBrainz, MusicBrainz, and AcousticBrainz when open data is
+available. Lyrics are not used as a matching criterion.
 
 iTunes Search does not provide play counts, so "most listened" is approximated
 with search relevance, repeated appearances across searches, exact-title matching,

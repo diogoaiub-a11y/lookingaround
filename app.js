@@ -16,11 +16,14 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-audio-criteria-v15";
+const APP_VERSION = "vibingecho-open-music-v16";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v15";
+const LISTENBRAINZ_API_URL = "/api/listenbrainz";
+const MUSICBRAINZ_API_URL = "/api/musicbrainz";
+const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
+const CACHE_KEY = "vibingecho-cache-v16";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -332,6 +335,7 @@ async function runFromSeed(seed) {
   try {
     const country = countryInput.value;
     seed.audioFeatures = seed.audioFeatures || (await analyzeTrackAudio(seed));
+    seed.openMusic = seed.openMusic || (await enrichOpenMusic(seed));
     renderSeed(seed);
     setStatus(
       seed.audioFeatures
@@ -455,6 +459,102 @@ async function searchItunes({ term, country, attribute, limit }) {
   return data.results || [];
 }
 
+async function enrichOpenMusic(track) {
+  const cacheKey = `open-music:${track.artistName}:${track.trackName}:${track.collectionName}`;
+  const cached = readCache(cacheKey);
+  if (cached) return cached;
+
+  const fallback = {
+    mbid: null,
+    musicBrainz: null,
+    listenBrainz: null,
+    acousticBrainz: null,
+    sources: [],
+    tags: [],
+  };
+
+  try {
+    const params = new URLSearchParams({
+      recording_name: track.trackName,
+      artist_name: track.artistName,
+    });
+
+    if (track.collectionName) {
+      params.set("release_name", track.collectionName);
+    }
+
+    const listenBrainz = await fetchJson(`${LISTENBRAINZ_API_URL}?${params.toString()}`);
+    const mbid =
+      listenBrainz?.mapper?.recording_mbid ||
+      listenBrainz?.metadata?.recording_mbid ||
+      listenBrainz?.metadata?.recording?.recording_mbid ||
+      null;
+
+    const musicBrainz = mbid
+      ? await fetchJson(`${MUSICBRAINZ_API_URL}?mbid=${encodeURIComponent(mbid)}`)
+      : await fetchJson(`${MUSICBRAINZ_API_URL}?${params.toString()}`);
+
+    const resolvedMbid = mbid || musicBrainz?.recordings?.[0]?.id || musicBrainz?.id || null;
+    const acousticBrainz = resolvedMbid
+      ? await fetchJson(`${ACOUSTICBRAINZ_API_URL}?mbid=${encodeURIComponent(resolvedMbid)}`)
+      : null;
+
+    const enriched = {
+      mbid: resolvedMbid,
+      musicBrainz,
+      listenBrainz,
+      acousticBrainz,
+      sources: [
+        resolvedMbid ? "MusicBrainz" : null,
+        listenBrainz?.mapper || listenBrainz?.metadata ? "ListenBrainz" : null,
+        acousticBrainz?.lowLevel || acousticBrainz?.highLevel ? "AcousticBrainz" : null,
+      ].filter(Boolean),
+      tags: openMusicTags(musicBrainz, listenBrainz, acousticBrainz),
+    };
+
+    writeCache(cacheKey, enriched);
+    return enriched;
+  } catch (error) {
+    writeCache(cacheKey, fallback);
+    return fallback;
+  }
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) return null;
+  const data = await response.json();
+  return data?.error ? null : data;
+}
+
+function openMusicTags(musicBrainz, listenBrainz, acousticBrainz) {
+  const tags = new Set();
+  const recording = musicBrainz?.recordings?.[0] || musicBrainz;
+
+  for (const item of recording?.tags || []) {
+    if (item?.name) tags.add(item.name);
+  }
+  for (const item of recording?.genres || []) {
+    if (item?.name) tags.add(item.name);
+  }
+  for (const item of listenBrainz?.metadata?.tag?.recording || []) {
+    if (item?.tag) tags.add(item.tag);
+  }
+
+  const high = acousticBrainz?.highLevel?.highlevel;
+  if (high?.mood_acoustic?.value) tags.add(`mood:${high.mood_acoustic.value}`);
+  if (high?.mood_aggressive?.value) tags.add(`mood:${high.mood_aggressive.value}`);
+  if (high?.mood_electronic?.value) tags.add(`mood:${high.mood_electronic.value}`);
+  if (high?.mood_happy?.value) tags.add(`mood:${high.mood_happy.value}`);
+  if (high?.mood_party?.value) tags.add(`mood:${high.mood_party.value}`);
+  if (high?.mood_relaxed?.value) tags.add(`mood:${high.mood_relaxed.value}`);
+  if (high?.mood_sad?.value) tags.add(`mood:${high.mood_sad.value}`);
+  if (high?.genre_dortmund?.value) tags.add(`genre:${high.genre_dortmund.value}`);
+  if (high?.genre_rosamerica?.value) tags.add(`genre:${high.genre_rosamerica.value}`);
+
+  return [...tags].slice(0, 12);
+}
+
 async function fetchItunes(query) {
   const proxyUrl = `${PROXY_API_URL}?${query}`;
 
@@ -513,6 +613,7 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
   const analyzedTracks = await mapWithConcurrency(tracks.slice(0, AUDIO_ANALYSIS_LIMIT), 6, async (track) => ({
       ...track,
       audioFeatures: await analyzeTrackAudio(track),
+      openMusic: await enrichOpenMusic(track),
     }));
 
   const ranked = analyzedTracks
@@ -521,6 +622,7 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
     .map((track) => {
       const profile = vibeProfile(track, track.audioFeatures);
       const audioSimilarity = compareAudioFeatures(seed.audioFeatures, track.audioFeatures);
+      refineWithOpenMusic(audioSimilarity, seed.openMusic, track.openMusic);
       const criterionMatches = audioSimilarity.criteria || [];
       const score = Math.round(audioSimilarity.score * 100);
 
@@ -1005,6 +1107,9 @@ function inferMood(track, features = null) {
 function renderSeed(track) {
   const profile = vibeProfile(track, track.audioFeatures);
   const audioStatus = track.audioFeatures ? "audio preview analyzed" : "audio preview not analyzed";
+  const sourceStatus = track.openMusic?.sources?.length
+    ? `Open data: ${track.openMusic.sources.join(", ")}.`
+    : "Open data: not found.";
   seedSection.hidden = false;
   seedCard.innerHTML = `
     <img class="cover" src="${artwork(track, 300)}" alt="Capa de ${escapeHtml(track.trackName)}" />
@@ -1014,7 +1119,7 @@ function renderSeed(track) {
       </div>
       <h3>${escapeHtml(track.trackName)}</h3>
       <p class="artist">${escapeHtml(track.artistName)} - ${escapeHtml(track.primaryGenreName || "Unknown genre")}</p>
-      <p class="why">${escapeHtml(track.collectionName || "Album not available")} ${year(track.releaseDate) || ""}. ${audioStatus}. ${APP_VERSION}.</p>
+      <p class="why">${escapeHtml(track.collectionName || "Album not available")} ${year(track.releaseDate) || ""}. ${audioStatus}. ${sourceStatus} ${APP_VERSION}.</p>
       <div class="actions">
         ${track.previewUrl ? `<audio controls preload="none" src="${track.previewUrl}"></audio>` : ""}
         <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">Open in iTunes</a>
@@ -1043,6 +1148,7 @@ function renderResults(tracks) {
     node.querySelector(".artist").textContent = `${track.artistName} - ${track.primaryGenreName || "Unknown genre"}`;
     node.querySelector(".why").textContent = track.analysis;
     node.querySelector(".match-row").insertAdjacentHTML("beforeend", tagBadges(track));
+    node.querySelector(".match-row").insertAdjacentHTML("beforeend", sourceBadges(track));
     node.querySelector(".vibe-bars").innerHTML = vibeBars(track);
 
     const audio = node.querySelector("audio");
@@ -1066,6 +1172,12 @@ function tagBadges(track) {
     ? track.criterionMatches.slice(0, 4).map((criterion) => criterion.label)
     : (track.sharedVibes?.length ? track.sharedVibes : track.sharedTags?.length ? track.sharedTags : track.tags || []).slice(0, 5);
   return tags.map((tag) => `<span class="category-tag">${escapeHtml(tag)}</span>`).join("");
+}
+
+function sourceBadges(track) {
+  return (track.openMusic?.sources || [])
+    .map((source) => `<span class="category-tag">${escapeHtml(source)}</span>`)
+    .join("");
 }
 
 function seedScore(term, track) {
@@ -1621,6 +1733,58 @@ function criteriaAnalysis(track, audioSimilarity) {
     .join(", ");
 
   return `This recommendation is based only on the requested audio criteria. Strongest overlaps: ${top}. Weakest accepted differences: ${weak}. It passed the gates for tonality/harmony, BPM/rhythm, percussion, timbre, production texture, structure, melody, emotional energy, dynamics, vocal style, dominant frequency range, and repetitive motifs.`;
+}
+
+function refineWithOpenMusic(audioSimilarity, seedOpenMusic, trackOpenMusic) {
+  const seedLow = seedOpenMusic?.acousticBrainz?.lowLevel;
+  const trackLow = trackOpenMusic?.acousticBrainz?.lowLevel;
+  const seedHigh = seedOpenMusic?.acousticBrainz?.highLevel?.highlevel;
+  const trackHigh = trackOpenMusic?.acousticBrainz?.highLevel?.highlevel;
+
+  if (!audioSimilarity.available) return;
+
+  const updates = [];
+  if (seedLow?.rhythm?.bpm && trackLow?.rhythm?.bpm) {
+    const bpmScore = closeness(seedLow.rhythm.bpm / 220, trackLow.rhythm.bpm / 220, 1.8);
+    updates.push(["bpmRhythm", bpmScore]);
+  }
+  if (seedLow?.tonal?.key_key && trackLow?.tonal?.key_key) {
+    const keyScore = seedLow.tonal.key_key === trackLow.tonal.key_key ? 1 : 0.58;
+    const scaleScore = seedLow?.tonal?.key_scale === trackLow?.tonal?.key_scale ? 1 : 0.62;
+    updates.push(["tonalityHarmony", keyScore * 0.55 + scaleScore * 0.45]);
+  }
+  if (seedHigh && trackHigh) {
+    const moodKeys = [
+      "mood_acoustic",
+      "mood_aggressive",
+      "mood_electronic",
+      "mood_happy",
+      "mood_party",
+      "mood_relaxed",
+      "mood_sad",
+    ];
+    const moodScore = average(
+      moodKeys.map((key) => (seedHigh[key]?.value === trackHigh[key]?.value ? 1 : 0.45)),
+    );
+    updates.push(["emotionalEnergy", moodScore]);
+  }
+
+  for (const [key, score] of updates) {
+    const criterion = audioSimilarity.criteria.find((item) => item.key === key);
+    if (criterion) {
+      criterion.score = clamp(criterion.score * 0.55 + score * 0.45, 0, 1);
+    }
+  }
+
+  if (updates.length) {
+    audioSimilarity.score = clamp(
+      audioSimilarity.criteria.reduce((sum, criterion) => sum + criterion.score * criterion.weight, 0),
+      0,
+      1,
+    );
+    audioSimilarity.criteria.sort((a, b) => b.score - a.score);
+    audioSimilarity.reason = `similar ${audioSimilarity.criteria[0].label}`;
+  }
 }
 
 function coreSoundFamilies(families) {
