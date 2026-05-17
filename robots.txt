@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap:https://vibingecho.vercel.app/sitemap.xml
