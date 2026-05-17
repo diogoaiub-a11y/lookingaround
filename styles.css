@@ -309,7 +309,8 @@ button:disabled {
 }
 
 .match-score,
-.mood-tag {
+.mood-tag,
+.category-tag {
   display: inline-flex;
   align-items: center;
   min-height: 26px;
@@ -327,6 +328,12 @@ button:disabled {
 .mood-tag {
   color: var(--blue);
   background: rgba(255, 61, 242, 0.12);
+}
+
+.category-tag {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
 }
 
 h2 {

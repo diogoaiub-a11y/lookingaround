@@ -19,6 +19,9 @@ It does not need a backend, manual database, Java, Node, or API key.
 - Users can adjust how close the match should be, explore by category, ask for a
   surprise recommendation, save favorites, revisit recent searches, and use
   "More like this" from any recommendation.
+- Songs receive multiple tags at once, such as genre family, mood, texture,
+  pace, era, and audio-feel tags. Recommendations connect songs with more
+  overlapping tags.
 - The browser keeps a local cache for 24 hours to avoid repeated calls.
 
 ## Deploy to Vercel

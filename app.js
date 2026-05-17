@@ -16,11 +16,11 @@ const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-explore-v6";
+const APP_VERSION = "vibingecho-tags-v7";
 const API_URL = "https://itunes.apple.com/search";
 const PROXY_API_URL = "/api/itunes";
 const AUDIO_PROXY_URL = "/api/audio";
-const CACHE_KEY = "vibingecho-cache-v6";
+const CACHE_KEY = "vibingecho-cache-v7";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -142,16 +142,36 @@ const knownOriginals = new Map([
   ["blinding lights", "the weeknd"],
 ]);
 
-const categoryTerms = {
-  pop: ["pop", "dance pop", "top songs", "pop hits"],
-  "r&b": ["r&b", "soul", "neo soul", "quiet storm"],
-  rock: ["rock", "pop rock", "alternative rock", "classic rock"],
-  "hip-hop": ["hip-hop", "rap", "trap", "pop rap"],
-  dance: ["dance", "electronic", "house", "club"],
-  indie: ["indie", "alternative", "dream pop", "singer/songwriter"],
-  latin: ["latin pop", "reggaeton", "bachata", "urbano latino"],
-  calm: ["acoustic", "ambient", "piano", "chill"],
-  dark: ["dark pop", "alternative", "industrial", "trap"],
+const categoryCatalog = {
+  pop: { label: "Pop", terms: ["pop", "dance pop", "pop hits", "top songs"], tags: ["pop", "mainstream", "polished", "bright"] },
+  "r&b": { label: "R&B / Soul", terms: ["r&b", "soul", "neo soul", "quiet storm"], tags: ["r&b", "soul", "warm", "romantic"] },
+  rock: { label: "Rock", terms: ["rock", "pop rock", "alternative rock", "classic rock"], tags: ["rock", "raw", "guitar", "anthemic"] },
+  "hip-hop": { label: "Hip-Hop", terms: ["hip-hop", "rap", "trap", "pop rap"], tags: ["hip-hop", "rap", "rhythmic", "bass"] },
+  dance: { label: "Dance / Electronic", terms: ["dance", "electronic", "house", "club"], tags: ["dance", "electronic", "club", "pulse"] },
+  indie: { label: "Indie / Alternative", terms: ["indie", "alternative", "dream pop", "singer/songwriter"], tags: ["indie", "alternative", "atmospheric", "intimate"] },
+  latin: { label: "Latin", terms: ["latin pop", "reggaeton", "bachata", "urbano latino"], tags: ["latin", "rhythmic", "warm", "dance"] },
+  funk: { label: "Funk", terms: ["funk", "funk pop", "funk rock", "boogie"], tags: ["funk", "groove", "bass", "rhythmic"] },
+  disco: { label: "Disco", terms: ["disco", "nu disco", "dance pop", "boogie"], tags: ["disco", "dance", "bright", "groove"] },
+  "new-wave": { label: "New Wave", terms: ["new wave", "synth pop", "post-punk", "80s pop"], tags: ["new-wave", "synth", "retro", "bright"] },
+  "synth-pop": { label: "Synth Pop", terms: ["synth pop", "electropop", "new wave", "dream pop"], tags: ["synth", "electronic", "polished", "atmospheric"] },
+  trap: { label: "Trap", terms: ["trap", "rap", "hip-hop", "dark trap"], tags: ["trap", "bass", "dark", "rhythmic"] },
+  reggaeton: { label: "Reggaeton", terms: ["reggaeton", "urbano latino", "latin urban", "dembow"], tags: ["reggaeton", "latin", "dance", "rhythmic"] },
+  mpb: { label: "MPB", terms: ["mpb", "bossa nova", "brazilian", "samba"], tags: ["mpb", "brazilian", "warm", "organic"] },
+  jazz: { label: "Jazz", terms: ["jazz", "vocal jazz", "smooth jazz", "bebop"], tags: ["jazz", "warm", "organic", "improvised"] },
+  blues: { label: "Blues", terms: ["blues", "electric blues", "soul blues", "blues rock"], tags: ["blues", "raw", "melancholic", "guitar"] },
+  folk: { label: "Folk", terms: ["folk", "singer/songwriter", "americana", "indie folk"], tags: ["folk", "acoustic", "organic", "intimate"] },
+  acoustic: { label: "Acoustic", terms: ["acoustic", "unplugged", "singer/songwriter", "piano"], tags: ["acoustic", "organic", "calm", "intimate"] },
+  ambient: { label: "Ambient", terms: ["ambient", "new age", "chill", "downtempo"], tags: ["ambient", "calm", "atmospheric", "spacious"] },
+  metal: { label: "Metal", terms: ["metal", "hard rock", "heavy metal", "metalcore"], tags: ["metal", "heavy", "dark", "raw"] },
+  punk: { label: "Punk", terms: ["punk", "pop punk", "post-punk", "garage rock"], tags: ["punk", "raw", "fast", "guitar"] },
+  "k-pop": { label: "K-Pop", terms: ["k-pop", "korean pop", "kpop", "idol"], tags: ["k-pop", "pop", "polished", "bright"] },
+  soundtrack: { label: "Soundtrack", terms: ["soundtrack", "score", "cinematic", "theme"], tags: ["soundtrack", "cinematic", "atmospheric", "dramatic"] },
+  calm: { label: "Calm", terms: ["acoustic", "ambient", "piano", "chill"], tags: ["calm", "soft", "spacious", "warm"] },
+  dark: { label: "Dark", terms: ["dark pop", "alternative", "industrial", "trap"], tags: ["dark", "moody", "heavy", "atmospheric"] },
+  party: { label: "Party", terms: ["party", "dance", "club", "pop hits"], tags: ["party", "dance", "bright", "pulse"] },
+  workout: { label: "Workout", terms: ["workout", "edm", "hip-hop", "rock"], tags: ["workout", "energetic", "pulse", "heavy"] },
+  "night-drive": { label: "Night Drive", terms: ["synthwave", "dark pop", "indie electronic", "night drive"], tags: ["night-drive", "synth", "dark", "atmospheric"] },
+  heartbreak: { label: "Heartbreak", terms: ["heartbreak", "sad songs", "r&b", "ballad"], tags: ["heartbreak", "melancholic", "romantic", "intimate"] },
 };
 
 const surpriseQueries = [
@@ -291,7 +311,7 @@ async function runCategory(category) {
   results.innerHTML = "";
 
   try {
-    const terms = categoryTerms[category] || [category];
+    const terms = categoryData(category).terms;
     const country = countryInput.value;
     const batches = await Promise.all(
       terms.map((term) => searchItunes({ term, country, limit: 35 })),
@@ -435,6 +455,7 @@ function jsonp(url) {
 
 async function rankTracks(seed, tracks, mood, similarity = 0.72) {
   const seedProfile = vibeProfile(seed, seed.audioFeatures);
+  const seedTags = trackTags(seed, seedProfile);
   const analyzedTracks = await mapWithConcurrency(tracks.slice(0, AUDIO_ANALYSIS_LIMIT), 6, async (track) => ({
       ...track,
       audioFeatures: await analyzeTrackAudio(track),
@@ -446,6 +467,8 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
       const reasons = [];
       let score = 0;
       const profile = vibeProfile(track, track.audioFeatures);
+      const tags = trackTags(track, profile);
+      const sharedTags = intersection(seedTags, tags);
       const audioSimilarity = compareAudioFeatures(seed.audioFeatures, track.audioFeatures);
 
       if (audioSimilarity.available) {
@@ -486,6 +509,11 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         score += 4;
       }
 
+      score += Math.min(sharedTags.length * Math.round(4 + similarity * 8), 42);
+      if (sharedTags.length) {
+        reasons.push(`${sharedTags.length} shared categories`);
+      }
+
       if (isLowQualityVariant(track)) {
         score -= 35;
       }
@@ -496,7 +524,9 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         reasons: reasons.slice(0, 3),
         mood: profile.mood,
         profile,
-        analysis: vibeAnalysis(track, seed, profile, audioSimilarity),
+        tags,
+        sharedTags,
+        analysis: vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags),
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -600,7 +630,7 @@ function prioritizeCandidatePool(seed, tracks) {
 }
 
 function prioritizeCategoryPool(category, tracks) {
-  const family = categoryTerms[category] || [category];
+  const family = categoryData(category).terms;
 
   return tracks
     .map((track, index) => {
@@ -620,11 +650,15 @@ function prioritizeCategoryPool(category, tracks) {
 }
 
 function rankCategoryTracks(category, tracks, selectedMood, similarity) {
-  const family = categoryTerms[category] || [category];
+  const categoryInfo = categoryData(category);
+  const family = categoryInfo.terms;
+  const categoryTags = new Set(categoryInfo.tags);
   const wantedMood = selectedMood === "auto" ? null : selectedMood;
   const ranked = tracks
     .map((track) => {
       const profile = vibeProfile(track, track.audioFeatures);
+      const tags = trackTags(track, profile);
+      const sharedTags = intersection([...categoryTags], tags);
       const genre = normalize(track.primaryGenreName);
       const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
       let score = track.audioFeatures ? 45 : 18;
@@ -632,6 +666,7 @@ function rankCategoryTracks(category, tracks, selectedMood, similarity) {
       if (family.some((term) => genre.includes(normalize(term)) || text.includes(normalize(term)))) {
         score += 34;
       }
+      score += Math.min(sharedTags.length * 10, 42);
       if (wantedMood && profile.mood === wantedMood) {
         score += 18;
       }
@@ -647,7 +682,8 @@ function rankCategoryTracks(category, tracks, selectedMood, similarity) {
         score: Math.min(score, 99),
         mood: profile.mood,
         profile,
-        analysis: categoryAnalysis(track, category, profile),
+        tags,
+        analysis: categoryAnalysis(track, categoryInfo, profile, sharedTags),
       };
     })
     .filter((track) => track.score >= 42)
@@ -656,12 +692,68 @@ function rankCategoryTracks(category, tracks, selectedMood, similarity) {
   return diversifyTracks(ranked, similarity > 0.65 ? 10 : 12, { strict: similarity > 0.65 });
 }
 
-function categoryAnalysis(track, category, profile) {
+function categoryAnalysis(track, categoryInfo, profile, sharedTags) {
   const audioLine = track.audioFeatures
     ? "Its preview was analyzed for energy, pulse, brightness, and warmth."
     : "It is included from category relevance because the preview could not be analyzed.";
+  const tagLine = sharedTags.length
+    ? `Shared tags: ${sharedTags.slice(0, 4).join(", ")}.`
+    : "It connects through the broader category mood.";
 
-  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} This makes it fit the ${category} lane while keeping its own identity.`;
+  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} ${tagLine} This makes it fit the ${categoryInfo.label} lane while keeping its own identity.`;
+}
+
+function categoryData(category) {
+  return categoryCatalog[category] || {
+    label: category,
+    terms: [category],
+    tags: [category],
+  };
+}
+
+function trackTags(track, profile = vibeProfile(track, track.audioFeatures)) {
+  const genre = normalize(track.primaryGenreName);
+  const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
+  const tags = new Set([profile.mood, profile.pace, profile.texture]);
+
+  for (const [key, category] of Object.entries(categoryCatalog)) {
+    const hasTerm = category.terms.some((term) => {
+      const normalizedTerm = normalize(term);
+      return genre.includes(normalizedTerm) || text.includes(normalizedTerm);
+    });
+
+    if (hasTerm) {
+      tags.add(key);
+      category.tags.forEach((tag) => tags.add(tag));
+    }
+  }
+
+  if (track.audioFeatures) {
+    if (track.audioFeatures.energy > 0.68) tags.add("energetic");
+    if (track.audioFeatures.energy < 0.35) tags.add("soft");
+    if (track.audioFeatures.pulse > 0.6) tags.add("pulse");
+    if (track.audioFeatures.brightness > 0.62) tags.add("bright");
+    if (track.audioFeatures.brightness < 0.34) tags.add("dark");
+    if (track.audioFeatures.warmth > 0.58) tags.add("warm");
+    if (track.audioFeatures.dynamics > 0.5) tags.add("dynamic");
+  }
+
+  const releaseYear = year(track.releaseDate);
+  if (!Number.isNaN(releaseYear)) {
+    if (releaseYear < 1980) tags.add("classic");
+    else if (releaseYear < 1990) tags.add("80s");
+    else if (releaseYear < 2000) tags.add("90s");
+    else if (releaseYear < 2010) tags.add("2000s");
+    else if (releaseYear < 2020) tags.add("2010s");
+    else tags.add("current");
+  }
+
+  return [...tags].filter(Boolean);
+}
+
+function intersection(first, second) {
+  const secondSet = new Set(second);
+  return first.filter((item) => secondSet.has(item));
 }
 
 function isLowQualityVariant(track) {
@@ -715,7 +807,7 @@ function vibeProfile(track, features = null) {
   return { mood, pace, texture };
 }
 
-function vibeAnalysis(track, seed, profile, audioSimilarity) {
+function vibeAnalysis(track, seed, profile, audioSimilarity, sharedTags = []) {
   const genre = track.primaryGenreName || "its genre";
   const seedMood = moodLabels[inferMood(seed, seed.audioFeatures)];
   const currentMood = moodLabels[profile.mood];
@@ -727,8 +819,11 @@ function vibeAnalysis(track, seed, profile, audioSimilarity) {
   const audioLine = audioSimilarity.available
     ? `The preview analysis puts it close to the reference in ${audioSimilarity.reason.replace("similar ", "")}, so this is based on the audio preview rather than just catalog tags.`
     : "The preview could not be analyzed, so this match uses catalog signals only.";
+  const tagLine = sharedTags.length
+    ? `It also shares ${sharedTags.slice(0, 5).join(", ")} categories.`
+    : "It has fewer category overlaps, so the match leans more on sound and mood.";
 
-  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} In context, ${genre} keeps it distinct instead of just repeating the same match. ${contrast}`;
+  return `${moodAnalysis[profile.mood]}. ${paceAnalysis[profile.pace]} ${textureAnalysis[profile.texture]} ${audioLine} ${tagLine} In context, ${genre} keeps it distinct instead of just repeating the same match. ${contrast}`;
 }
 
 function inferMood(track, features = null) {
@@ -803,6 +898,7 @@ function renderResults(tracks) {
     node.querySelector("h3").textContent = track.trackName;
     node.querySelector(".artist").textContent = `${track.artistName} - ${track.primaryGenreName || "Unknown genre"}`;
     node.querySelector(".why").textContent = track.analysis;
+    node.querySelector(".match-row").insertAdjacentHTML("beforeend", tagBadges(track));
     node.querySelector(".vibe-bars").innerHTML = vibeBars(track);
 
     const audio = node.querySelector("audio");
@@ -819,6 +915,11 @@ function renderResults(tracks) {
 
     results.appendChild(node);
   }
+}
+
+function tagBadges(track) {
+  const tags = (track.sharedTags?.length ? track.sharedTags : track.tags || []).slice(0, 4);
+  return tags.map((tag) => `<span class="category-tag">${escapeHtml(tag)}</span>`).join("");
 }
 
 function seedScore(term, track) {
