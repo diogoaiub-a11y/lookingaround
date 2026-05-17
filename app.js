@@ -19,14 +19,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-open-vibes-v28";
+const APP_VERSION = "vibingecho-open-vibes-v29";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-open-cache-v28";
+const CACHE_KEY = "vibingecho-open-cache-v29";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
@@ -442,20 +442,34 @@ async function enrichMedia(track) {
   const cached = readCache(cacheKey);
   if (cached) return cached;
 
-  const media =
-    (await fetchJsonSafe(
-      `${MEDIA_API_URL}?track=${encodeURIComponent(track.trackName)}&artist=${encodeURIComponent(track.artistName)}`,
-    )) || {};
+  const media = await fetchMediaWithFallback(track);
   const directDeezer = normalizeDeezerMedia(media, track);
   const enriched = {
     coverUrl: directDeezer.coverUrl || media.coverUrl || coverArtArchiveUrl(track) || "",
     previewUrl: directDeezer.previewUrl || media.previewUrl || "",
     mediaUrl: directDeezer.mediaUrl || media.deezerUrl || track.trackViewUrl,
+    title: directDeezer.title || media.title || "",
+    artist: directDeezer.artist || media.artist || "",
     source: directDeezer.previewUrl || media.previewUrl || media.coverUrl ? "Deezer preview" : "MusicBrainz cover fallback",
   };
 
   writeCache(cacheKey, enriched);
   return enriched;
+}
+
+async function fetchMediaWithFallback(track) {
+  const artist = usableArtistName(track.artistName) ? track.artistName : "";
+  const primary =
+    (await fetchJsonSafe(
+      `${MEDIA_API_URL}?track=${encodeURIComponent(track.trackName)}&artist=${encodeURIComponent(artist)}`,
+    )) || {};
+  if (primary.previewUrl || primary.coverUrl || primary.data?.length) return primary;
+
+  return (
+    (await fetchJsonSafe(
+      `${MEDIA_API_URL}?track=${encodeURIComponent(track.trackName)}&artist=`,
+    )) || {}
+  );
 }
 
 function normalizeDeezerMedia(media, track) {
@@ -476,6 +490,8 @@ function normalizeDeezerMedia(media, track) {
     coverUrl: best?.album?.cover_xl || best?.album?.cover_big || best?.album?.cover_medium || "",
     previewUrl: best?.preview || "",
     mediaUrl: best?.link || "",
+    title: best?.title_short || best?.title || "",
+    artist: best?.artist?.name || "",
   };
 }
 
@@ -493,7 +509,7 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
       const comparison = compareOpenAudio(seedOpen, track.openMusic, index);
       const score = applyStrictness(comparison.score, similarity, comparison.acousticLevel);
       const tags = track.openMusic?.tags || [];
-      const moodValue = selectedMood || inferMoodFromOpenData(track.openMusic) || comparison.mood || "open-data";
+      const moodValue = cleanVibeLabel(selectedMood || inferMoodFromOpenData(track.openMusic) || comparison.mood);
 
       return {
         ...track,
@@ -532,7 +548,7 @@ function rankCategoryTracks(category, tracks) {
         criterion("Rhythm family", acoustic.rhythmReady ? 0.66 : 0.4, acoustic.rhythmReady, "Open rhythm profile"),
       ];
       const score = clamp(0.5 + overlap * 0.42 + (hasAcousticData(track.openMusic) ? 0.08 : 0), 0, 0.9);
-      const moodValue = inferMoodFromOpenData(track.openMusic) || data.label.toLowerCase();
+      const moodValue = cleanVibeLabel(inferMoodFromOpenData(track.openMusic) || data.label.toLowerCase());
 
       return {
         ...track,
@@ -1009,9 +1025,9 @@ function renderSeed(track) {
   seedCard.innerHTML = `
     <img class="cover" src="${artwork(track, 300)}" alt="Cover for ${escapeHtml(track.trackName)}" />
     <div>
-      <span class="mood-tag">${escapeHtml(inferMoodFromOpenData(track.openMusic) || "open data")}</span>
-      <h3>${escapeHtml(track.trackName)}</h3>
-      <p class="artist">${escapeHtml(track.artistName)}</p>
+      <span class="mood-tag">${escapeHtml(cleanVibeLabel(inferMoodFromOpenData(track.openMusic)))}</span>
+      <h3>${escapeHtml(displayTitle(track))}</h3>
+      <p class="artist">${escapeHtml(displayArtist(track))}</p>
       <p class="why">${escapeHtml(track.collectionName || "Release not listed")} ${year(track.releaseDate) || ""}. ${escapeHtml(acoustic)} Sources: ${escapeHtml(sources)}.</p>
       <audio controls preload="none" hidden></audio>
       <div class="actions">
@@ -1037,9 +1053,9 @@ function renderResults(tracks) {
     node.querySelector(".cover").src = artwork(track, 300);
     node.querySelector(".cover").alt = `Cover for ${track.trackName}`;
     node.querySelector(".match-score").textContent = `${track.matchPercent || track.score}% match`;
-    node.querySelector(".mood-tag").textContent = track.mood || "open data";
-    node.querySelector("h3").textContent = track.trackName;
-    node.querySelector(".artist").textContent = `${track.artistName} - ${track.primaryGenreName || "Open music"}`;
+    node.querySelector(".mood-tag").textContent = cleanVibeLabel(track.mood);
+    node.querySelector("h3").textContent = displayTitle(track);
+    node.querySelector(".artist").textContent = displayArtistLine(track);
     node.querySelector(".why").textContent = track.analysis;
     node.querySelector(".vibe-bars").innerHTML = vibeBars(track.criterionMatches || []);
     node.querySelector(".favorite").textContent = isFavorite(track) ? "Saved" : "Save";
@@ -1079,7 +1095,11 @@ async function hydrateMediaForTracks(tracks) {
     const image = card.querySelector("img.cover");
     const audio = card.querySelector("audio");
     const small = card.querySelector("small");
+    const title = card.querySelector("h3");
+    const artist = card.querySelector(".artist");
     if (image) image.src = artwork(track, 300);
+    if (title) title.textContent = displayTitle(track);
+    if (artist) artist.textContent = displayArtistLine(track);
     if (audio && track.media?.previewUrl) {
       audio.src = track.media.previewUrl;
       audio.hidden = false;
@@ -1141,6 +1161,46 @@ function coverArtArchiveUrl(track) {
   return track.releaseMbid
     ? `https://coverartarchive.org/release/${encodeURIComponent(track.releaseMbid)}/front-500`
     : "";
+}
+
+function displayTitle(track) {
+  return track.media?.title || track.trackName || "Unknown track";
+}
+
+function displayArtist(track) {
+  if (usableArtistName(track.media?.artist)) return track.media.artist;
+  if (usableArtistName(track.artistName)) return track.artistName;
+  return "Artist unavailable";
+}
+
+function displayArtistLine(track) {
+  const genre = cleanGenreLabel(track.primaryGenreName);
+  return genre ? `${displayArtist(track)} - ${genre}` : displayArtist(track);
+}
+
+function cleanVibeLabel(value) {
+  const normalized = normalize(value);
+  if (!normalized || normalized === "open data" || normalized === "open music") return "vibe match";
+  if (normalized.length > 24 || suspiciousTag(normalized)) return "vibe match";
+  return String(value).replace(/-/g, " ");
+}
+
+function cleanGenreLabel(value) {
+  const normalized = normalize(value);
+  if (!normalized || normalized === "open music" || normalized === "open data") return "";
+  if (normalized.length > 28 || suspiciousTag(normalized)) return "";
+  return String(value).replace(/-/g, " ");
+}
+
+function usableArtistName(value) {
+  const normalized = normalize(value);
+  if (!normalized || normalized === "unknown artist" || normalized === "open music") return false;
+  return !suspiciousTag(normalized);
+}
+
+function suspiciousTag(value) {
+  const normalized = normalize(value);
+  return /^(sinkus|sikus|unknown|various artists?|open data|open music)$/.test(normalized);
 }
 
 function seedScore(term, track) {
