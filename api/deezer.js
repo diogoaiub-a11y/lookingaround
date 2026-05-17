@@ -1,15 +1,17 @@
 module.exports = async function handler(request, response) {
   const track = request.query.track;
   const artist = request.query.artist;
+  const textQuery = request.query.q;
+  const limit = Math.min(Number(request.query.limit) || 24, 50);
 
-  if (!track) {
-    response.status(400).json({ error: "track is required" });
+  if (!track && !textQuery) {
+    response.status(400).json({ error: "track or q is required" });
     return;
   }
 
   try {
-    const query = artist ? `track:"${track}" artist:"${artist}"` : track;
-    const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=12`;
+    const query = textQuery || (artist ? `track:"${track}" artist:"${artist}"` : track);
+    const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=${limit}`;
     const deezerResponse = await fetch(url, {
       headers: {
         "User-Agent": "VibingEcho/1.0",
@@ -39,6 +41,7 @@ module.exports = async function handler(request, response) {
 
     response.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=604800");
     response.status(200).json({
+      data: data.data || [],
       previewUrl: best?.preview || "",
       coverUrl: best?.album?.cover_xl || best?.album?.cover_big || best?.album?.cover_medium || "",
       deezerUrl: best?.link || "",
