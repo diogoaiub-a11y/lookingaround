@@ -22,14 +22,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-vibe-prompt-v40";
+const APP_VERSION = "vibingecho-vibe-prompt-v41";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-vibe-prompt-cache-v40";
+const CACHE_KEY = "vibingecho-vibe-prompt-cache-v41";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -633,6 +633,15 @@ async function searchDeezerTracks(query, limit = 24) {
   const tracks = (data?.data || []).map(normalizeDeezerTrack).filter(Boolean);
   writeCache(cacheKey, tracks);
   return tracks;
+}
+
+async function searchDeezerTracksSafe(query, limit = 12) {
+  try {
+    return await searchDeezerTracks(query, limit);
+  } catch (error) {
+    console.warn(`Deezer search skipped for "${query}": ${error.message}`);
+    return [];
+  }
 }
 
 async function deezerCandidates(seed) {
@@ -1455,23 +1464,135 @@ function blendPromptWithReference(profile, referenceSeed) {
 async function promptCandidates(profile, referenceSeed) {
   const queryData = profile.queries
     .map((query) => ({ query, tags: profile.tags, specificity: 0.9 }))
-    .slice(0, 12);
-  const batches = await Promise.all(
-    queryData.map(async (item, queryIndex) => {
-      const tracks = await searchDeezerTracks(item.query, 20);
-      return tracks.map((track) => ({
+    .slice(0, 6);
+  const batches = await mapWithConcurrency(queryData, 2, async (item, queryIndex) => {
+    const tracks = await searchDeezerTracksSafe(item.query, 12);
+    const usableTracks = tracks.length ? tracks : [promptFallbackTrack(item.query, profile, queryIndex)];
+    return usableTracks
+      .filter(Boolean)
+      .map((track) => ({
         ...track,
         candidateQuery: item.query,
         promptQueryIndex: queryIndex,
         candidateSpecificity: item.specificity,
       }));
-    }),
-  );
+  });
 
   return dedupeTracks(batches.flat())
     .filter((track) => !isLowQualityVariant(track))
     .filter((track) => !referenceSeed || (track.trackId !== referenceSeed.trackId && !sameSongFamily(referenceSeed, track)))
     .slice(0, 96);
+}
+
+function promptFallbackTrack(query, profile, index) {
+  const parsed = parsePromptSongQuery(query);
+  const searchUrl = `https://www.deezer.com/search/${encodeURIComponent(query)}`;
+  return {
+    trackId: `prompt-fallback:${normalize(query)}:${index}`,
+    trackName: parsed.title,
+    artistName: parsed.artist || "Search result",
+    collectionName: "Open in Deezer to play",
+    primaryGenreName: "vibe prompt",
+    releaseDate: "",
+    trackViewUrl: searchUrl,
+    artworkUrl100: "",
+    releaseMbid: "",
+    tags: profile.tags.slice(0, 16),
+    media: {
+      coverUrl: "",
+      previewUrl: "",
+      mediaUrl: searchUrl,
+      title: parsed.title,
+      artist: parsed.artist || "Search result",
+      source: "Fallback search link",
+    },
+    score: Math.max(100000 - index * 1000, 1),
+  };
+}
+
+function parsePromptSongQuery(query) {
+  const knownArtists = [
+    ...new Set(
+      vibePromptCatalog
+        .flatMap((item) => item.queries)
+        .flatMap((item) => {
+          const normalized = normalize(item);
+          return [
+            "dua lipa",
+            "justin timberlake",
+            "mark ronson",
+            "bruno mars",
+            "rihanna",
+            "m83",
+            "mr kitty",
+            "kavinsky",
+            "tame impala",
+            "the neighbourhood",
+            "arctic monkeys",
+            "adele",
+            "lewis capaldi",
+            "passenger",
+            "conan gray",
+            "olivia rodrigo",
+            "kodaline",
+            "ed sheeran",
+            "taylor swift",
+            "abba",
+            "coldplay",
+            "fleetwood mac",
+            "boyz ii men",
+            "florence the machine",
+            "natasha bedingfield",
+            "avicii",
+            "imagine dragons",
+            "the xx",
+            "aphex twin",
+            "ludovico einaudi",
+            "petit biscuit",
+            "marconi union",
+            "yiruma",
+            "bon iver",
+            "st vincent",
+            "cigarettes after sex",
+            "lord huron",
+            "hozier",
+            "phoebe bridgers",
+            "kanye west",
+            "billie eilish",
+            "lil nas x",
+            "jack harlow",
+            "the white stripes",
+            "eminem",
+            "macklemore",
+            "ryan lewis",
+            "kendrick lamar",
+            "fort minor",
+            "the weeknd",
+            "daniel caesar",
+            "kali uchis",
+            "miguel",
+            "frank ocean",
+            "beach house",
+            "sufjan stevens",
+            "rex orange county",
+            "surfaces",
+            "jack johnson",
+            "weezer",
+            "declan mckenna",
+            "mgmt",
+            "lorde",
+            "grouplove",
+            "fun",
+          ].filter((artist) => normalized.includes(artist));
+        }),
+    ),
+  ].sort((a, b) => b.length - a.length);
+
+  const normalizedQuery = normalize(query);
+  const artist = knownArtists.find((name) => normalizedQuery.includes(name));
+  if (!artist) return { title: query, artist: "" };
+  const title = query.replace(new RegExp(`\\s+${escapeRegExp(artist)}\\s*$`, "i"), "").trim();
+  return { title: title || query, artist };
 }
 
 function rankPromptTracks(profile, tracks, referenceSeed, similarity = 0.72) {
