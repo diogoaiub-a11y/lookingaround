@@ -20,14 +20,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-spotify-v38";
+const APP_VERSION = "vibingecho-spotify-v39";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-spotify-cache-v38";
+const CACHE_KEY = "vibingecho-spotify-cache-v39";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -2151,9 +2151,16 @@ async function createSpotifyPlaylistFromResults() {
     return;
   }
 
-  const clientId = spotifyClientId({ ask: true });
+  let clientId = spotifyClientId();
   if (!clientId) {
-    setStatus("Spotify setup needed: paste a Spotify Client ID to connect once.");
+    const wantsSetup = window.confirm(
+      "Automatic playlist creation needs a Spotify Client ID from your Spotify account.\n\nPress OK to paste it now, or Cancel to open Spotify links for these recommendations.",
+    );
+    if (wantsSetup) clientId = spotifyClientId({ ask: true });
+  }
+
+  if (!clientId) {
+    await openSpotifySearchFallback(tracks);
     return;
   }
 
@@ -2217,6 +2224,63 @@ function spotifyPlaylistTracks() {
   if (liveTracks.length) return liveTracks;
   const savedTracks = readJson(SPOTIFY_PENDING_TRACKS_KEY);
   return Array.isArray(savedTracks) ? savedTracks.slice(0, RECOMMENDATION_LIMIT) : [];
+}
+
+async function openSpotifySearchFallback(tracks) {
+  const uniqueTracks = dedupeTracks(tracks).slice(0, RECOMMENDATION_LIMIT);
+  await copySpotifyTrackList(uniqueTracks);
+
+  const links = uniqueTracks
+    .map((track, index) => {
+      const title = displayTitle(track);
+      const artist = displayArtist(track);
+      return `<li><a href="${spotifySearchUrl(track)}" target="_blank" rel="noopener noreferrer">${index + 1}. ${escapeHtml(title)} - ${escapeHtml(artist)}</a></li>`;
+    })
+    .join("");
+
+  const page = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VibingEcho Spotify Links</title>
+  <style>
+    body { margin: 0; padding: 32px; background: #111216; color: #f7edf5; font: 18px/1.5 Arial, sans-serif; }
+    h1 { margin: 0 0 10px; color: #ff38d4; }
+    p { color: #c9c0c8; max-width: 760px; }
+    ol { padding-left: 24px; max-width: 880px; }
+    li { margin: 12px 0; }
+    a { color: #ff38d4; font-weight: 800; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>VibingEcho Spotify Links</h1>
+  <p>Automatic playlist creation needs a Spotify Client ID. For now, open these links to find each recommendation on Spotify. The full list was also copied to your clipboard when possible.</p>
+  <ol>${links}</ol>
+</body>
+</html>`;
+
+  const blob = new Blob([page], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  setStatus(`Opened Spotify search links for ${uniqueTracks.length} recommendations. Playlist creation needs a Spotify Client ID.`);
+}
+
+async function copySpotifyTrackList(tracks) {
+  if (!navigator.clipboard?.writeText) return;
+  const text = tracks
+    .map((track, index) => `${index + 1}. ${displayTitle(track)} - ${displayArtist(track)}\n${spotifySearchUrl(track)}`)
+    .join("\n\n");
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Clipboard permission is optional; the generated link page still works.
+  }
+}
+
+function spotifySearchUrl(track) {
+  return `https://open.spotify.com/search/${encodeURIComponent(`${displayTitle(track)} ${displayArtist(track)}`)}`;
 }
 
 async function findSpotifyTrackUris(tracks, token) {
