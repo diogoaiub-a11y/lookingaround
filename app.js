@@ -22,14 +22,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-vibe-prompt-v46";
+const APP_VERSION = "vibingecho-vibe-prompt-v47";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-vibe-prompt-cache-v46";
+const CACHE_KEY = "vibingecho-vibe-prompt-cache-v47";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -347,23 +347,23 @@ const curatedPromptMedia = {
   "someone like you adele": {
     title: "Someone Like You",
     artist: "Adele",
-    coverUrl: "https://cdn-images.dzcdn.net/images/cover/dc1ce848d830ecc93521be5a78350364/1000x1000-000000-80-0-0.jpg",
-    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/c/f/6/0/cf61cfa01f653ad6b8696a81c6e4d747.mp3?hdnea=exp=1779405011~acl=/api/1/1/c/f/6/0/cf61cfa01f653ad6b8696a81c6e4d747.mp3*~data=user_id=0,application_id=42~hmac=47c7537e92e1750039ca551922236b83d0258425b6193ab89392d5697e3d551f",
-    mediaUrl: "https://www.deezer.com/track/1174603092",
+    coverUrl: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/eb/ca/25/ebca2596-cd1e-b295-91a3-771c868d0a79/191404113868.png/600x600bb.jpg",
+    previewUrl: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/ef/18/7b/ef187b7d-f487-e935-4ca1-af5748313710/mzaf_8455263230305249048.plus.aac.p.m4a",
+    mediaUrl: "https://music.apple.com/us/album/someone-like-you/1544491232?i=1544491998&uo=4",
   },
   "before you go lewis capaldi": {
     title: "Before You Go",
     artist: "Lewis Capaldi",
-    coverUrl: "https://cdn-images.dzcdn.net/images/cover/327a13284c291832cf01622a414847c9/1000x1000-000000-80-0-0.jpg",
-    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/d/a/4/0/da4564a79ddd1d91a002fec8f7be6263.mp3?hdnea=exp=1779405012~acl=/api/1/1/d/a/4/0/da4564a79ddd1d91a002fec8f7be6263.mp3*~data=user_id=0,application_id=42~hmac=b15b55e179b67f5d1261e6b7129729e9a153fbb73f95fa6d2461236cf70c1d3b",
-    mediaUrl: "https://www.deezer.com/track/807205422",
+    coverUrl: "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/9f/58/7c/9f587c97-f0e9-e335-d8e2-60b8e2d62bad/19UMGIM90850.rgb.jpg/600x600bb.jpg",
+    previewUrl: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/60/b9/cc/60b9cc69-2e37-f867-bc15-91e2ce767b4a/mzaf_18421692819209045993.plus.aac.p.m4a",
+    mediaUrl: "https://music.apple.com/us/album/before-you-go/1485383702?i=1485384412&uo=4",
   },
   "let her go passenger": {
     title: "Let Her Go",
     artist: "Passenger",
-    coverUrl: "https://cdn-images.dzcdn.net/images/cover/4e3bc8222ca1042be42e8806366d6c4e/1000x1000-000000-80-0-0.jpg",
-    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/d/d/8/0/dd8f319d5229834f112e95fcaf08696c.mp3?hdnea=exp=1779405012~acl=/api/1/1/d/d/8/0/dd8f319d5229834f112e95fcaf08696c.mp3*~data=user_id=0,application_id=42~hmac=507bb4417cdae98856b0f51bad4e42c15bfe180a1381cfe40e1921c24ef46824",
-    mediaUrl: "https://www.deezer.com/track/604074552",
+    coverUrl: "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/9b/7e/28/9b7e2896-e049-1663-6791-e0111690ffc1/067003051361.png/600x600bb.jpg",
+    previewUrl: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview112/v4/1c/93/e5/1c93e5ed-eadc-effc-093a-cbaadc17f897/mzaf_16074705324618158471.plus.aac.p.m4a",
+    mediaUrl: "https://music.apple.com/us/album/let-her-go/1623014082?i=1623014090&uo=4",
   },
   "heather conan gray": {
     title: "Heather",
@@ -375,9 +375,9 @@ const curatedPromptMedia = {
   "drivers license olivia rodrigo": {
     title: "drivers license",
     artist: "Olivia Rodrigo",
-    coverUrl: "https://cdn-images.dzcdn.net/images/cover/e68da86fd7976135c2d2d1715afaef7c/1000x1000-000000-80-0-0.jpg",
-    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/4/d/5/0/4d54d919da63ae5ed6f2de3e05433317.mp3?hdnea=exp=1779405013~acl=/api/1/1/4/d/5/0/4d54d919da63ae5ed6f2de3e05433317.mp3*~data=user_id=0,application_id=42~hmac=d81bc2dcfc19c8b9711ede97b6affe661d611de4aab622f81d9178bdfcf6681a",
-    mediaUrl: "https://www.deezer.com/track/1378342592",
+    coverUrl: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/02/ed/8c/02ed8cab-c089-2fdd-7ce6-ab334a9a4e19/21UMGIM26093.rgb.jpg/600x600bb.jpg",
+    previewUrl: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/36/62/61/366261be-0996-d73d-de6f-03417867c800/mzaf_8201528327761821135.plus.aac.p.m4a",
+    mediaUrl: "https://music.apple.com/us/album/drivers-license/1560734944?i=1560735480&uo=4",
   },
   "all i want kodaline": {
     title: "All I Want",
@@ -389,9 +389,9 @@ const curatedPromptMedia = {
   "when the party s over billie eilish": {
     title: "when the party's over",
     artist: "Billie Eilish",
-    coverUrl: "https://cdn-images.dzcdn.net/images/cover/6630083f454d48eadb6a9b53f035d734/1000x1000-000000-80-0-0.jpg",
-    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/2/6/2/0/2622138c94fa96f4d5f06a4db1db733a.mp3?hdnea=exp=1779405014~acl=/api/1/1/2/6/2/0/2622138c94fa96f4d5f06a4db1db733a.mp3*~data=user_id=0,application_id=42~hmac=4465a8437c520d467765611b425e081eca5ab4ce6bf7aea9c574382e5c91b7c5",
-    mediaUrl: "https://www.deezer.com/track/655095962",
+    coverUrl: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/1a/37/d1/1a37d1b1-8508-54f2-f541-bf4e437dda76/19UMGIM05028.rgb.jpg/600x600bb.jpg",
+    previewUrl: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/2a/ba/44/2aba4410-ba71-89ce-e075-10120409c31c/mzaf_16887001963655152332.plus.aac.p.m4a",
+    mediaUrl: "https://music.apple.com/us/album/when-the-partys-over/1450695723?i=1450695872&uo=4",
   },
   "liability lorde": {
     title: "Liability",
@@ -410,9 +410,9 @@ const curatedPromptMedia = {
   "the night we met lord huron": {
     title: "The Night We Met",
     artist: "Lord Huron",
-    coverUrl: "https://cdn-images.dzcdn.net/images/cover/19b14fa5b494e0e74332f7dbf8dab87d/1000x1000-000000-80-0-0.jpg",
-    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/d/f/a/0/dfa99f9a7c601cec5cceefc99265835a.mp3?hdnea=exp=1779405016~acl=/api/1/1/d/f/a/0/dfa99f9a7c601cec5cceefc99265835a.mp3*~data=user_id=0,application_id=42~hmac=705c184354776da4c3a90c7434d71bf90d344d2b723e3b09477efd4a324d9382",
-    mediaUrl: "https://www.deezer.com/track/499988832",
+    coverUrl: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/55/41/4a/55414a18-861a-79d1-e575-5bf8cf205dbe/886445056839_Cover.jpg/600x600bb.jpg",
+    previewUrl: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/4b/36/b7/4b36b739-1de7-e0ae-45da-9a66463127ac/mzaf_1821541347983595183.plus.aac.p.m4a",
+    mediaUrl: "https://music.apple.com/us/album/the-night-we-met/1806531135?i=1806531961&uo=4",
   },
 };
 
@@ -1597,7 +1597,7 @@ function promptFallbackTrack(query, profile, index) {
       mediaUrl: searchUrl,
       title: curated.title || parsed.title,
       artist: curated.artist || parsed.artist || "Search result",
-      source: curated.previewUrl ? "Curated Deezer preview" : "Fallback search link",
+      source: curated.previewUrl ? "Curated Apple preview" : "Fallback search link",
       skipHydration: Boolean(curated.previewUrl || curated.coverUrl),
     },
     score: Math.max(100000 - index * 1000, 1),
@@ -2223,6 +2223,9 @@ function displayArtistLine(track) {
 }
 
 function linkLabel(track) {
+  if (track.trackViewUrl?.includes("music.apple.com") || track.media?.mediaUrl?.includes("music.apple.com")) {
+    return "Open in Apple Music";
+  }
   return track.deezerId || track.media?.mediaUrl?.includes("deezer.com") || track.trackViewUrl?.includes("deezer.com")
     ? "Open in Deezer"
     : "Open in MusicBrainz";
