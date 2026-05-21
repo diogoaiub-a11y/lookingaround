@@ -27,6 +27,14 @@ module.exports = async function handler(request, response) {
     }
 
     const data = await deezerResponse.json();
+    if (data?.error) {
+      response.status(200).json({
+        data: [],
+        error: data.error.message || data.error.type || "Deezer quota or lookup error",
+      });
+      return;
+    }
+
     const normalizedTrack = normalize(track);
     const normalizedArtist = normalize(artist);
     const best = (data.data || [])
