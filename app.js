@@ -22,14 +22,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-vibe-prompt-v42";
+const APP_VERSION = "vibingecho-vibe-prompt-v43";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-vibe-prompt-cache-v42";
+const CACHE_KEY = "vibingecho-vibe-prompt-cache-v43";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -585,7 +585,7 @@ async function runVibePrompt(prompt, referenceTerm = "") {
     renderVibePromptSeed(combinedProfile, referenceSeed);
     addHistory(prompt);
 
-    updateProgress(50, "Searching Deezer by feeling");
+    updateProgress(50, "Building local recommendations");
     const candidates = await promptCandidates(combinedProfile, referenceSeed);
     updateProgress(72, "Ranking by described essence");
     const recommendations = rankPromptTracks(combinedProfile, candidates, referenceSeed, similarityValue());
@@ -1468,19 +1468,15 @@ function blendPromptWithReference(profile, referenceSeed) {
 async function promptCandidates(profile, referenceSeed) {
   const queryData = profile.queries
     .map((query) => ({ query, tags: profile.tags, specificity: 0.9 }))
-    .slice(0, 6);
-  const batches = await mapWithConcurrency(queryData, 2, async (item, queryIndex) => {
-    const tracks = await searchDeezerTracksSafe(item.query, 12);
-    const usableTracks = tracks.length ? tracks : [promptFallbackTrack(item.query, profile, queryIndex)];
-    return usableTracks
-      .filter(Boolean)
-      .map((track) => ({
-        ...track,
-        candidateQuery: item.query,
-        promptQueryIndex: queryIndex,
-        candidateSpecificity: item.specificity,
-      }));
-  });
+    .slice(0, 18);
+  const batches = queryData.map((item, queryIndex) => [
+    {
+      ...promptFallbackTrack(item.query, profile, queryIndex),
+      candidateQuery: item.query,
+      promptQueryIndex: queryIndex,
+      candidateSpecificity: item.specificity,
+    },
+  ]);
 
   return dedupeTracks(batches.flat())
     .filter((track) => !isLowQualityVariant(track))
