@@ -13,23 +13,31 @@
           <p class="eyebrow">VibingEcho</p>
           <h1>Find songs with the same vibe.</h1>
           <p>
-            Type a song with the artist or band and get similar tracks from
-            the Deezer catalog, with open-data analysis when available.
+            Describe the moment, memory, or feeling you want. Add a song only
+            if you want VibingEcho to use it as a sonic reference.
           </p>
         </div>
 
         <form class="search-panel" id="recommendation-form">
-          <label for="music-query">Song and artist/band</label>
+          <label class="vibe-prompt-label" for="vibe-prompt">
+            What do you want to feel?
+            <textarea
+              id="vibe-prompt"
+              rows="5"
+              placeholder="Ex: songs to drive at midnight thinking about the future, something animated for a party with friends, or music to miss my ex without crying too much"
+            ></textarea>
+          </label>
+
+          <label for="music-query">Reference song, optional</label>
           <div class="search-row">
             <input
               id="music-query"
               name="query"
               type="search"
               autocomplete="off"
-              placeholder="Ex: Beat It Michael Jackson, Sweater Weather The Neighbourhood"
-              required
+              placeholder="Optional: Sweater Weather The Neighbourhood"
             />
-            <button type="submit">Recommend</button>
+            <button type="submit">Find vibe</button>
           </div>
 
           <div class="controls">
@@ -108,6 +116,7 @@
 
           </div>
           <div class="quick-actions">
+            <button id="vibe-prompt-button" type="button">Find by description</button>
             <button id="category-button" type="button">Explore category</button>
             <button id="surprise-button" type="button">Surprise me</button>
           </div>
@@ -184,6 +193,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=vibingecho-spotify-v39"></script>
+    <script src="app.js?v=vibingecho-vibe-prompt-v40"></script>
   </body>
 </html>

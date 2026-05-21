@@ -1,5 +1,6 @@
 const form = document.querySelector("#recommendation-form");
 const queryInput = document.querySelector("#music-query");
+const vibePromptInput = document.querySelector("#vibe-prompt");
 const moodInput = document.querySelector("#mood");
 const similarityInput = document.querySelector("#similarity");
 const similarityLabel = document.querySelector("#similarity-label");
@@ -11,6 +12,7 @@ const results = document.querySelector("#results");
 const clearCacheButton = document.querySelector("#clear-cache");
 const spotifyPlaylistButton = document.querySelector("#spotify-playlist");
 const categoryButton = document.querySelector("#category-button");
+const vibePromptButton = document.querySelector("#vibe-prompt-button");
 const surpriseButton = document.querySelector("#surprise-button");
 const historyList = document.querySelector("#history-list");
 const favoritesList = document.querySelector("#favorites-list");
@@ -20,14 +22,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-spotify-v39";
+const APP_VERSION = "vibingecho-vibe-prompt-v40";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-spotify-cache-v39";
+const CACHE_KEY = "vibingecho-vibe-prompt-cache-v40";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -260,6 +262,87 @@ const everyNoiseInspiredVibes = {
   "organic-acoustic": ["acoustic", "folk", "organic", "warm", "soft", "intimate"],
 };
 
+const vibePromptCatalog = [
+  {
+    label: "party rush",
+    needles: ["party", "festa", "balada", "animado", "dançar", "dancar", "drinks", "friends", "amigos"],
+    tags: ["euphoric", "bright", "groovy", "body-led", "punchy", "clean", "hook", "confident"],
+    queries: ["Levitating Dua Lipa", "Can't Stop the Feeling Justin Timberlake", "Don't Start Now Dua Lipa", "Uptown Funk Mark Ronson Bruno Mars", "Where Have You Been Rihanna", "Rather Be Clean Bandit Jess Glynne"],
+  },
+  {
+    label: "midnight drive",
+    needles: ["drive", "dirigir", "madrugada", "night drive", "estrada", "carro", "cidade vazia", "late night"],
+    tags: ["nocturnal", "spacious", "pulse", "smooth", "bittersweet", "cinematic", "bass-heavy", "glossy"],
+    queries: ["Midnight City M83", "After Dark Mr.Kitty", "Nightcall Kavinsky", "The Less I Know The Better Tame Impala", "Sweater Weather The Neighbourhood", "505 Arctic Monkeys"],
+  },
+  {
+    label: "missing an ex",
+    needles: ["ex", "saudade", "termino", "término", "heartbreak", "sentir falta", "voltar", "breakup"],
+    tags: ["melancholic", "bittersweet", "romantic", "lonely", "intimate", "soft vocal", "nostalgic", "slow-burn"],
+    queries: ["Someone Like You Adele", "Before You Go Lewis Capaldi", "Let Her Go Passenger", "Heather Conan Gray", "drivers license Olivia Rodrigo", "All I Want Kodaline"],
+  },
+  {
+    label: "remembering mother",
+    needles: ["mae", "mãe", "mother", "mama", "familia", "família", "colo", "casa", "infancia", "infância"],
+    tags: ["tender", "warm", "nostalgic", "organic", "soft vocal", "comforting", "intimate", "hopeful"],
+    queries: ["Supermarket Flowers Ed Sheeran", "The Best Day Taylor Swift", "Slipping Through My Fingers ABBA", "Fix You Coldplay", "Landslide Fleetwood Mac", "A Song For Mama Boyz II Men"],
+  },
+  {
+    label: "future thoughts",
+    needles: ["futuro", "future", "pensar na vida", "crescer", "dream", "sonhar", "destino", "amanha", "amanhã"],
+    tags: ["hopeful", "cinematic", "wide", "uplifting", "dreamy", "build-up", "reflective", "bright"],
+    queries: ["Outro M83", "A Sky Full of Stars Coldplay", "Dog Days Are Over Florence The Machine", "Unwritten Natasha Bedingfield", "The Nights Avicii", "On Top Of The World Imagine Dragons"],
+  },
+  {
+    label: "study focus",
+    needles: ["study", "estudar", "foco", "focus", "ler", "reading", "concentrar", "trabalho", "homework"],
+    tags: ["calm", "smooth", "spacious", "linear", "soft", "low-distraction", "warm", "steady"],
+    queries: ["Intro The xx", "Avril 14th Aphex Twin", "Experience Ludovico Einaudi", "Sunset Lover Petit Biscuit", "Weightless Marconi Union", "River Flows in You Yiruma"],
+  },
+  {
+    label: "rain window",
+    needles: ["rain", "chuva", "janela", "frio", "winter", "inverno", "nublado", "cloudy"],
+    tags: ["melancholic", "cozy", "soft", "spacious", "nostalgic", "warm", "intimate", "slow"],
+    queries: ["Roslyn Bon Iver St. Vincent", "Holocene Bon Iver", "Apocalypse Cigarettes After Sex", "The Night We Met Lord Huron", "Cherry Wine Hozier", "I Know The End Phoebe Bridgers"],
+  },
+  {
+    label: "confidence walk",
+    needles: ["confiante", "confidence", "poderoso", "power", "boss", "se sentir foda", "autoestima", "walk"],
+    tags: ["confident", "punchy", "sharp", "bass-heavy", "glossy", "dramatic", "bold", "driving"],
+    queries: ["Power Kanye West", "bad guy Billie Eilish", "Needed Me Rihanna", "Industry Baby Lil Nas X Jack Harlow", "S&M Rihanna", "Seven Nation Army The White Stripes"],
+  },
+  {
+    label: "gym pressure",
+    needles: ["gym", "academia", "treino", "workout", "correr", "run", "raiva", "rage"],
+    tags: ["aggressive", "punchy", "driving", "heavy", "percussive", "tense", "explosive", "confident"],
+    queries: ["Till I Collapse Eminem", "Can't Hold Us Macklemore Ryan Lewis", "Believer Imagine Dragons", "Stronger Kanye West", "DNA Kendrick Lamar", "Remember The Name Fort Minor"],
+  },
+  {
+    label: "sensual night",
+    needles: ["sensual", "sexy", "seduzir", "romantic night", "quente", "ficar", "date", "encontro"],
+    tags: ["sensual", "smooth", "warm", "bass-heavy", "intimate", "slow groove", "soft vocal", "dark"],
+    queries: ["Earned It The Weeknd", "Often The Weeknd", "Get You Daniel Caesar Kali Uchis", "Adorn Miguel", "Pink + White Frank Ocean", "Come Through H.E.R. Chris Brown"],
+  },
+  {
+    label: "alone at night",
+    needles: ["sozinho", "alone", "lonely", "vazio", "empty", "insomnia", "insonia", "insônia", "overthinking"],
+    tags: ["lonely", "dark", "spacious", "minimal", "soft vocal", "melancholic", "nocturnal", "intimate"],
+    queries: ["when the party's over Billie Eilish", "Liability Lorde", "Space Song Beach House", "Fourth of July Sufjan Stevens", "Ivy Frank Ocean", "The Night We Met Lord Huron"],
+  },
+  {
+    label: "beach sunset",
+    needles: ["praia", "beach", "sunset", "por do sol", "pôr do sol", "verao", "verão", "mar"],
+    tags: ["warm", "open-air", "bright", "relaxed", "groovy", "organic", "nostalgic", "smooth"],
+    queries: ["Sunflower Rex Orange County", "Sunday Best Surfaces", "Banana Pancakes Jack Johnson", "Island In The Sun Weezer", "Brazil Declan McKenna", "Electric Feel MGMT"],
+  },
+  {
+    label: "nostalgic friends",
+    needles: ["amigos antigos", "old friends", "nostalgia", "adolescencia", "adolescência", "lembranças", "memories"],
+    tags: ["nostalgic", "bright", "bittersweet", "anthemic", "warm", "uplifting", "open-air", "hook"],
+    queries: ["Ribs Lorde", "Tongue Tied Grouplove", "Kids MGMT", "Young Blood The Naked and Famous", "Some Nights fun.", "We Are Young fun. Janelle Monae"],
+  },
+];
+
 const styleTags = new Set([
   "pop",
   "rock",
@@ -294,7 +377,25 @@ const styleTags = new Set([
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const term = queryInput.value.trim();
-  if (term) await runRecommendation(term);
+  const prompt = vibePromptInput.value.trim();
+  if (prompt) {
+    await runVibePrompt(prompt, term);
+  } else if (term) {
+    await runRecommendation(term);
+  } else {
+    setStatus("Describe a vibe, or add a reference song.");
+  }
+});
+
+vibePromptButton.addEventListener("click", async () => {
+  const prompt = vibePromptInput.value.trim();
+  const term = queryInput.value.trim();
+  if (!prompt) {
+    setStatus("Write what the music should feel like first.");
+    vibePromptInput.focus();
+    return;
+  }
+  await runVibePrompt(prompt, term);
 });
 
 categoryButton.addEventListener("click", async () => {
@@ -341,8 +442,15 @@ results.addEventListener("click", async (event) => {
 historyList.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
-  queryInput.value = button.dataset.query;
-  await runRecommendation(button.dataset.query);
+  const query = button.dataset.query;
+  if (looksLikeVibePrompt(query)) {
+    vibePromptInput.value = query;
+    queryInput.value = "";
+    await runVibePrompt(query);
+  } else {
+    queryInput.value = query;
+    await runRecommendation(query);
+  }
 });
 
 favoritesList.addEventListener("click", async (event) => {
@@ -442,6 +550,51 @@ async function runCategory(category) {
 
     renderResults(recommendations);
     setStatus(`${APP_VERSION}: ${recommendations.length} ${data.label} tracks selected by shared open-data categories.`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Search failed: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function runVibePrompt(prompt, referenceTerm = "") {
+  const profile = analyzeVibePrompt(prompt);
+  setLoading(true, `Building a vibe from your description... ${APP_VERSION}`);
+  updateProgress(8, "Reading your vibe");
+  seedSection.hidden = true;
+  seedCard.innerHTML = "";
+  results.innerHTML = "";
+
+  try {
+    let referenceSeed = null;
+    if (referenceTerm) {
+      updateProgress(18, "Reading optional reference song");
+      referenceSeed = await findSeedTrack(referenceTerm);
+      if (referenceSeed) {
+        referenceSeed.openMusic = referenceSeed.openMusic || quickOpenMusic(referenceSeed);
+      }
+    }
+
+    updateProgress(32, "Expanding vibe combinations");
+    const combinedProfile = referenceSeed ? blendPromptWithReference(profile, referenceSeed) : profile;
+    renderVibePromptSeed(combinedProfile, referenceSeed);
+    addHistory(prompt);
+
+    updateProgress(50, "Searching Deezer by feeling");
+    const candidates = await promptCandidates(combinedProfile, referenceSeed);
+    updateProgress(72, "Ranking by described essence");
+    const recommendations = rankPromptTracks(combinedProfile, candidates, referenceSeed, similarityValue());
+
+    if (!recommendations.length) {
+      setStatus("I understood the vibe, but not enough tracks passed the filters. Try a little more detail.");
+      updateProgress(0, "Ready", { hidden: true });
+      return;
+    }
+
+    updateProgress(84, "Rendering recommendations");
+    renderResults(recommendations);
+    setStatus(`${APP_VERSION}: built ${recommendations.length} recommendations for "${combinedProfile.label}".`);
   } catch (error) {
     console.error(error);
     setStatus(`Search failed: ${error.message}`);
@@ -1207,6 +1360,160 @@ function deezerSearchQueries(seed) {
     .slice(0, 12);
 }
 
+function analyzeVibePrompt(prompt) {
+  const text = normalize(prompt);
+  const matched = vibePromptCatalog
+    .map((item) => {
+      const hits = item.needles.filter((needle) => text.includes(normalize(needle))).length;
+      return { ...item, hits };
+    })
+    .filter((item) => item.hits > 0)
+    .sort((a, b) => b.hits - a.hits);
+
+  const tags = new Set();
+  const queries = [];
+  const labels = [];
+
+  for (const item of matched.slice(0, 4)) {
+    labels.push(item.label);
+    item.tags.forEach((tag) => tags.add(tag));
+    queries.push(...item.queries);
+  }
+
+  promptRuleTags(prompt).forEach((tag) => tags.add(tag));
+
+  if (!queries.length) {
+    queries.push(
+      "Midnight City M83",
+      "Sweater Weather The Neighbourhood",
+      "The Less I Know The Better Tame Impala",
+      "Space Song Beach House",
+      "Ribs Lorde",
+      "Pink + White Frank Ocean",
+    );
+  }
+
+  const label = labels.length ? labels.join(" + ") : "custom described vibe";
+  const descriptionTags = [...tags].filter(Boolean);
+
+  return {
+    label,
+    prompt,
+    tags: descriptionTags.length ? descriptionTags : ["reflective", "smooth", "spacious", "bittersweet", "warm"],
+    queries: [...new Set(queries)].slice(0, 24),
+  };
+}
+
+function promptRuleTags(prompt) {
+  const text = normalize(prompt);
+  const tags = new Set();
+  const rules = [
+    [["calm", "calma", "relax", "peace", "paz", "tranquilo"], ["calm", "soft", "smooth", "warm"]],
+    [["sad", "triste", "chorar", "cry", "depress", "down"], ["melancholic", "lonely", "soft vocal", "slow"]],
+    [["happy", "feliz", "alegre", "animada", "animado"], ["bright", "uplifting", "euphoric", "hook"]],
+    [["dark", "sombrio", "pesado", "tenso", "tension"], ["dark", "tense", "bass-heavy", "dramatic"]],
+    [["dream", "sonho", "flutuar", "space", "viajar"], ["dreamy", "spacious", "hazy", "wide"]],
+    [["love", "amor", "romance", "apaixonar", "crush"], ["romantic", "intimate", "warm", "soft vocal"]],
+    [["fast", "rapido", "rápido", "correr", "pressa"], ["driving", "punchy", "percussive", "pulse"]],
+    [["slow", "lento", "devagar"], ["slow", "soft", "intimate", "spacious"]],
+    [["bass", "grave", "808", "sub"], ["bass-heavy", "dark", "punchy"]],
+    [["guitar", "guitarra", "violao", "violão"], ["textured", "organic", "warm"]],
+    [["piano"], ["soft", "organic", "intimate", "cinematic"]],
+    [["vocal", "voz", "sing", "cantando"], ["soft vocal", "intimate", "human"]],
+  ];
+
+  for (const [needles, values] of rules) {
+    if (needles.some((needle) => text.includes(normalize(needle)))) {
+      values.forEach((tag) => tags.add(tag));
+    }
+  }
+
+  return [...tags];
+}
+
+function looksLikeVibePrompt(value) {
+  const text = normalize(value);
+  if (text.split(" ").length >= 7) return true;
+  return vibePromptCatalog.some((item) => item.needles.some((needle) => text.includes(normalize(needle))));
+}
+
+function blendPromptWithReference(profile, referenceSeed) {
+  const referenceTags = essenceTags(referenceSeed).filter((tag) => !isStyleTag(tag));
+  const referenceQueries = deezerSearchQueries(referenceSeed)
+    .slice(0, 4)
+    .map((item) => item.query);
+
+  return {
+    ...profile,
+    label: `${profile.label} + ${displayTitle(referenceSeed)}`,
+    tags: [...new Set([...profile.tags, ...referenceTags])].slice(0, 32),
+    queries: [...new Set([...profile.queries, ...referenceQueries])].slice(0, 28),
+    referenceSeed,
+  };
+}
+
+async function promptCandidates(profile, referenceSeed) {
+  const queryData = profile.queries
+    .map((query) => ({ query, tags: profile.tags, specificity: 0.9 }))
+    .slice(0, 12);
+  const batches = await Promise.all(
+    queryData.map(async (item, queryIndex) => {
+      const tracks = await searchDeezerTracks(item.query, 20);
+      return tracks.map((track) => ({
+        ...track,
+        candidateQuery: item.query,
+        promptQueryIndex: queryIndex,
+        candidateSpecificity: item.specificity,
+      }));
+    }),
+  );
+
+  return dedupeTracks(batches.flat())
+    .filter((track) => !isLowQualityVariant(track))
+    .filter((track) => !referenceSeed || (track.trackId !== referenceSeed.trackId && !sameSongFamily(referenceSeed, track)))
+    .slice(0, 96);
+}
+
+function rankPromptTracks(profile, tracks, referenceSeed, similarity = 0.72) {
+  const targetTags = [...new Set(profile.tags.map(normalizeEssenceTag).filter(Boolean).filter((tag) => !isStyleTag(tag)))];
+  const referenceTags = referenceSeed ? essenceTags(referenceSeed) : [];
+  const ranked = tracks
+    .map((track, index) => {
+      const trackTags = essenceTags(track);
+      const promptScore = vibeTagSimilarity(targetTags, trackTags);
+      const referenceScore = referenceTags.length ? vibeTagSimilarity(referenceTags, trackTags) : 0;
+      const queryScore = textSimilarity(track.candidateQuery || "", `${track.trackName} ${track.artistName}`);
+      const queryTrust = clamp(0.34 - Number(track.promptQueryIndex || 0) * 0.025, 0.08, 0.34);
+      const score = clamp(promptScore * 0.54 + referenceScore * 0.16 + queryScore * 0.12 + queryTrust - index * 0.002, 0, 0.96);
+      const adjusted = applyStrictness(score, Math.max(0.54, similarity - 0.08), "tags");
+      const shared = targetTags.filter((tag) => trackTags.includes(tag));
+      const criteria = [
+        criterion("Described vibe", promptScore, promptScore >= 0.16, shared.slice(0, 5).join(", ") || "custom feeling match", 1.5),
+        referenceSeed
+          ? criterion("Reference song support", referenceScore, referenceScore >= 0.12, displayTitle(referenceSeed), 0.9)
+          : null,
+        criterion("Search context", queryScore, queryScore >= 0.08, track.candidateQuery || profile.label, 0.65),
+      ].filter(Boolean);
+
+      return {
+        ...track,
+        score: Math.round(adjusted * 100),
+        matchPercent: Math.round(adjusted * 100),
+        mood: cleanVibeLabel(profile.label),
+        tags: trackTags,
+        reasons: criteria.map((item) => item.label),
+        criterionMatches: criteria,
+        profile: { mood: profile.label, pace: "described", texture: "vibe prompt" },
+        analysis: `Matched your description through ${shared.slice(0, 4).join(", ") || "combined emotional and sonic cues"}.`,
+        essencePassed: promptScore >= 0.08 || queryScore >= 0.16 || (referenceSeed && referenceScore >= 0.12),
+      };
+    })
+    .filter((track) => track.essencePassed)
+    .sort((a, b) => b.score - a.score);
+
+  return diversifyTracks(ranked, RECOMMENDATION_LIMIT);
+}
+
 function trackMicroVibes(track) {
   const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName} ${(track.tags || []).join(" ")}`);
   const tags = new Set();
@@ -1501,6 +1808,29 @@ function renderSeed(track) {
       <div class="actions">
         <a href="${track.trackViewUrl}" target="_blank" rel="noreferrer">${escapeHtml(linkLabel(track))}</a>
       </div>
+    </div>
+  `;
+}
+
+function renderVibePromptSeed(profile, referenceSeed) {
+  seedSection.hidden = false;
+  const tagList = profile.tags
+    .slice(0, 14)
+    .map((tag) => `<span class="category-tag">${escapeHtml(cleanVibeLabel(tag))}</span>`)
+    .join("");
+  const reference = referenceSeed
+    ? `<p class="why">Reference support: ${escapeHtml(displayTitle(referenceSeed))} by ${escapeHtml(displayArtist(referenceSeed))}. The description still leads the search.</p>`
+    : `<p class="why">No reference song used. The recommendations are built from the described situation and emotional/sonic cues.</p>`;
+
+  seedCard.dataset.trackId = "vibe-prompt";
+  seedCard.innerHTML = `
+    <div class="prompt-art">VE</div>
+    <div>
+      <span class="mood-tag">described vibe</span>
+      <h3>${escapeHtml(profile.label)}</h3>
+      <p class="artist">${escapeHtml(profile.prompt)}</p>
+      ${reference}
+      <div class="prompt-tags">${tagList}</div>
     </div>
   `;
 }
@@ -2125,6 +2455,7 @@ function similarityValue() {
 function setLoading(isLoading, message) {
   form.querySelector("button[type='submit']").disabled = isLoading;
   categoryButton.disabled = isLoading;
+  vibePromptButton.disabled = isLoading;
   surpriseButton.disabled = isLoading;
   spotifyPlaylistButton.disabled = isLoading;
   if (message) setStatus(message);

@@ -32,7 +32,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -111,7 +112,8 @@ h1 {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 48px;
   color: var(--text);
@@ -125,6 +127,14 @@ input {
   padding: 0 14px;
 }
 
+textarea {
+  min-height: 132px;
+  margin-top: 10px;
+  padding: 13px 14px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
 input[type="range"] {
   min-height: 28px;
   padding: 0;
@@ -136,7 +146,8 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(255, 61, 242, 0.16);
 }
@@ -179,9 +190,13 @@ button:disabled {
 
 .quick-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-top: 16px;
+}
+
+.vibe-prompt-label {
+  margin-bottom: 16px;
 }
 
 .quick-actions button,
@@ -345,6 +360,25 @@ button:disabled {
   min-height: 220px;
   object-fit: cover;
   background: var(--panel-strong);
+}
+
+.prompt-art {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  color: #111216;
+  background:
+    radial-gradient(circle at 70% 20%, rgba(255, 120, 246, 0.85), transparent 32%),
+    linear-gradient(135deg, var(--accent), #5a5360);
+  font-size: 2.2rem;
+  font-weight: 950;
+}
+
+.prompt-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .track-info {
