@@ -9,6 +9,7 @@ const seedSection = document.querySelector("#seed-section");
 const seedCard = document.querySelector("#seed-card");
 const results = document.querySelector("#results");
 const clearCacheButton = document.querySelector("#clear-cache");
+const spotifyPlaylistButton = document.querySelector("#spotify-playlist");
 const categoryButton = document.querySelector("#category-button");
 const surpriseButton = document.querySelector("#surprise-button");
 const historyList = document.querySelector("#history-list");
@@ -19,20 +20,24 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-essence-vibes-v34";
+const APP_VERSION = "vibingecho-spotify-v35";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-essence-cache-v34";
+const CACHE_KEY = "vibingecho-spotify-cache-v35";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
+const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
+const SPOTIFY_VERIFIER_KEY = "vibingecho-spotify-verifier-v1";
+const SPOTIFY_PENDING_PLAYLIST_KEY = "vibingecho-spotify-pending-playlist-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
 const RECOMMENDATION_LIMIT = 36;
 const CATEGORY_LIMIT = 36;
 const FAST_CANDIDATE_LIMIT = 48;
+const SPOTIFY_CLIENT_ID = "PASTE_YOUR_SPOTIFY_CLIENT_ID_HERE";
 
 const currentTracks = new Map();
 
@@ -235,6 +240,10 @@ clearCacheButton.addEventListener("click", () => {
   setStatus("Local cache cleared. The next searches will call MusicBrainz, ListenBrainz, and AcousticBrainz again.");
 });
 
+spotifyPlaylistButton.addEventListener("click", async () => {
+  await createSpotifyPlaylistFromResults();
+});
+
 results.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
@@ -272,6 +281,7 @@ favoritesList.addEventListener("click", async (event) => {
 updateSimilarityLabel();
 renderHistory();
 renderFavorites();
+handleSpotifyCallback();
 
 async function runRecommendation(term) {
   setLoading(true, `Searching Deezer catalog... ${APP_VERSION}`);
@@ -1928,6 +1938,7 @@ function setLoading(isLoading, message) {
   form.querySelector("button[type='submit']").disabled = isLoading;
   categoryButton.disabled = isLoading;
   surpriseButton.disabled = isLoading;
+  spotifyPlaylistButton.disabled = isLoading;
   if (message) setStatus(message);
 }
 
@@ -1942,6 +1953,228 @@ function updateProgress(value, label, options = {}) {
     progressLabel.textContent = label;
     progressPercent.textContent = `${percent}%`;
     progressBar.style.width = `${percent}%`;
+  }
+}
+
+async function createSpotifyPlaylistFromResults() {
+  const tracks = [...currentTracks.values()].slice(0, RECOMMENDATION_LIMIT);
+  if (!tracks.length) {
+    setStatus("Generate recommendations first, then add them to Spotify.");
+    return;
+  }
+
+  if (!spotifyConfigured()) {
+    setStatus("Spotify setup needed: add your Spotify Client ID in app.js first.");
+    return;
+  }
+
+  localStorage.setItem(SPOTIFY_PENDING_PLAYLIST_KEY, "1");
+  const token = await getSpotifyToken();
+  if (!token) {
+    await startSpotifyLogin();
+    return;
+  }
+
+  setLoading(true, "Creating Spotify playlist...");
+  updateProgress(8, "Connecting to Spotify");
+
+  try {
+    const profile = await spotifyFetch("https://api.spotify.com/v1/me", token);
+    updateProgress(22, "Matching tracks on Spotify");
+    const uris = await findSpotifyTrackUris(tracks, token);
+
+    if (!uris.length) {
+      setStatus("Spotify could not match these recommendations.");
+      return;
+    }
+
+    updateProgress(64, "Creating playlist");
+    const playlist = await spotifyFetch(`https://api.spotify.com/v1/users/${profile.id}/playlists`, token, {
+      method: "POST",
+      body: JSON.stringify({
+        name: `VibingEcho - ${new Date().toLocaleDateString()}`,
+        description: "Playlist created from VibingEcho recommendations.",
+        public: false,
+      }),
+    });
+
+    updateProgress(82, "Adding songs");
+    for (const chunk of chunks(uris, 100)) {
+      await spotifyFetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, token, {
+        method: "POST",
+        body: JSON.stringify({ uris: chunk }),
+      });
+    }
+
+    localStorage.removeItem(SPOTIFY_PENDING_PLAYLIST_KEY);
+    updateProgress(100, "Spotify playlist created");
+    setStatus(`Spotify playlist created with ${uris.length} songs.`);
+    if (playlist.external_urls?.spotify) {
+      window.open(playlist.external_urls.spotify, "_blank", "noopener,noreferrer");
+    }
+    window.setTimeout(() => updateProgress(0, "Ready", { hidden: true }), 900);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Spotify failed: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function findSpotifyTrackUris(tracks, token) {
+  const found = [];
+  let completed = 0;
+
+  await mapWithConcurrency(tracks, 4, async (track) => {
+    const query = `track:${displayTitle(track)} artist:${displayArtist(track)}`;
+    const params = new URLSearchParams({ q: query, type: "track", limit: "5" });
+    const data = await spotifyFetch(`https://api.spotify.com/v1/search?${params.toString()}`, token);
+    const best = (data.tracks?.items || [])
+      .map((item, index) => ({
+        item,
+        score:
+          textSimilarity(displayTitle(track), item.name) * 0.65 +
+          textSimilarity(displayArtist(track), item.artists?.map((artist) => artist.name).join(" ")) * 0.35 -
+          index * 0.02,
+      }))
+      .sort((a, b) => b.score - a.score)[0];
+
+    if (best?.item?.uri && best.score >= 0.34) found.push(best.item.uri);
+    completed += 1;
+    updateProgress(22 + (completed / Math.max(tracks.length, 1)) * 42, "Matching tracks on Spotify");
+  });
+
+  return [...new Set(found)];
+}
+
+async function getSpotifyToken() {
+  const stored = readJson(SPOTIFY_TOKEN_KEY);
+  if (stored?.access_token && stored.expires_at > Date.now() + 60000) {
+    return stored.access_token;
+  }
+  return null;
+}
+
+async function startSpotifyLogin() {
+  const verifier = randomString(64);
+  const challenge = await pkceChallenge(verifier);
+  const state = randomString(20);
+  localStorage.setItem(SPOTIFY_VERIFIER_KEY, JSON.stringify({ verifier, state }));
+
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: SPOTIFY_CLIENT_ID,
+    scope: "playlist-modify-private playlist-modify-public",
+    code_challenge_method: "S256",
+    code_challenge: challenge,
+    redirect_uri: spotifyRedirectUri(),
+    state,
+  });
+
+  location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
+}
+
+async function handleSpotifyCallback() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get("code");
+  const state = params.get("state");
+  if (!code) return;
+
+  const saved = readJson(SPOTIFY_VERIFIER_KEY);
+  history.replaceState({}, document.title, location.pathname);
+
+  if (!saved?.verifier || saved.state !== state) {
+    setStatus("Spotify login could not be verified. Try again.");
+    return;
+  }
+
+  try {
+    const body = new URLSearchParams({
+      client_id: SPOTIFY_CLIENT_ID,
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: spotifyRedirectUri(),
+      code_verifier: saved.verifier,
+    });
+    const response = await fetch("https://accounts.spotify.com/api/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    const token = await response.json();
+    if (!response.ok) throw new Error(token.error_description || token.error || "Spotify token failed");
+
+    localStorage.setItem(
+      SPOTIFY_TOKEN_KEY,
+      JSON.stringify({ ...token, expires_at: Date.now() + token.expires_in * 1000 }),
+    );
+    localStorage.removeItem(SPOTIFY_VERIFIER_KEY);
+
+    if (localStorage.getItem(SPOTIFY_PENDING_PLAYLIST_KEY) === "1") {
+      setStatus("Spotify connected. Click Add all to Spotify again to create the playlist.");
+    } else {
+      setStatus("Spotify connected.");
+    }
+  } catch (error) {
+    console.error(error);
+    setStatus(`Spotify login failed: ${error.message}`);
+  }
+}
+
+async function spotifyFetch(url, token, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  const data = response.status === 204 ? null : await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || `Spotify returned ${response.status}`);
+  return data;
+}
+
+function spotifyConfigured() {
+  return SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_ID !== "PASTE_YOUR_SPOTIFY_CLIENT_ID_HERE";
+}
+
+function spotifyRedirectUri() {
+  return `${location.origin}${location.pathname}`;
+}
+
+async function pkceChallenge(verifier) {
+  const bytes = new TextEncoder().encode(verifier);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return base64Url(new Uint8Array(digest));
+}
+
+function base64Url(bytes) {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function randomString(length) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const values = crypto.getRandomValues(new Uint8Array(length));
+  return [...values].map((value) => chars[value % chars.length]).join("");
+}
+
+function chunks(items, size) {
+  const result = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+function readJson(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "null");
+  } catch {
+    return null;
   }
 }
 

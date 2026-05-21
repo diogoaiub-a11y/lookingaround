@@ -40,6 +40,26 @@ and the site falls back to ListenBrainz neighbors plus MusicBrainz tags.
 4. Build command: leave empty.
 5. Output directory: leave empty or use `.`.
 
+## Spotify playlist export
+
+The "Add all to Spotify" button uses Spotify Authorization Code with PKCE.
+
+1. Create an app at https://developer.spotify.com/dashboard.
+2. Add this redirect URI:
+
+```text
+https://YOUR-SITE.vercel.app/
+```
+
+3. Copy the app Client ID.
+4. In `app.js`, replace:
+
+```js
+const SPOTIFY_CLIENT_ID = "PASTE_YOUR_SPOTIFY_CLIENT_ID_HERE";
+```
+
+with your Client ID.
+
 ## Run locally
 
 ```bash

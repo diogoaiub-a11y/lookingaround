@@ -294,11 +294,24 @@ button:disabled {
   justify-content: space-between;
 }
 
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .section-heading button {
   min-height: 40px;
   color: var(--muted);
   background: transparent;
   border: 1px solid var(--line);
+}
+
+#spotify-playlist {
+  color: #111216;
+  background: #1ed760;
+  border-color: #1ed760;
 }
 
 .seed-card,
