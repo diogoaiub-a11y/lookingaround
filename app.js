@@ -22,14 +22,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-vibe-prompt-v45";
+const APP_VERSION = "vibingecho-vibe-prompt-v46";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-vibe-prompt-cache-v45";
+const CACHE_KEY = "vibingecho-vibe-prompt-cache-v46";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -2074,8 +2074,20 @@ function renderResults(tracks) {
     node.querySelector(".favorite").textContent = isFavorite(track) ? "Saved" : "Save";
     link.href = track.trackViewUrl;
     link.textContent = linkLabel(track);
-    audio.hidden = true;
-    small.textContent = "Loading cover and preview...";
+    if (track.media?.previewUrl) {
+      audio.src = track.media.previewUrl;
+      audio.hidden = false;
+      audio.onerror = () => {
+        audio.hidden = true;
+        if (small) small.textContent = "Preview expired. Open the track link to play it.";
+      };
+      small.textContent = "Preview and cover loaded.";
+    } else {
+      audio.hidden = true;
+      small.textContent = track.offlineFallback
+        ? "Open the track link to play it. Preview appears when available."
+        : "Loading cover and preview...";
+    }
 
     results.appendChild(node);
   });
@@ -2092,6 +2104,10 @@ async function hydrateSeedMedia(track) {
   if (audio && track.media?.previewUrl) {
     audio.src = track.media.previewUrl;
     audio.hidden = false;
+    audio.onerror = () => {
+      audio.hidden = true;
+      if (small) small.textContent = "Preview expired. Open the track link to play it.";
+    };
   }
 }
 
