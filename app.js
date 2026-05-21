@@ -22,14 +22,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-vibe-prompt-v47";
+const APP_VERSION = "vibingecho-vibe-prompt-v48";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-vibe-prompt-cache-v47";
+const CACHE_KEY = "vibingecho-vibe-prompt-cache-v48";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -2061,6 +2061,7 @@ function renderResults(tracks) {
     const audio = node.querySelector("audio");
     const link = node.querySelector("a");
     const small = node.querySelector("small");
+    const cardButtons = node.querySelector(".card-buttons");
 
     card.dataset.trackId = track.trackId;
     node.querySelector(".cover").src = artwork(track, 300);
@@ -2077,6 +2078,7 @@ function renderResults(tracks) {
     if (track.media?.previewUrl) {
       audio.src = track.media.previewUrl;
       audio.hidden = false;
+      addPreviewLink(cardButtons, track.media.previewUrl);
       audio.onerror = () => {
         audio.hidden = true;
         if (small) small.textContent = "Preview expired. Open the track link to play it.";
@@ -2141,12 +2143,14 @@ function applyTrackMedia(track) {
   const small = card.querySelector("small");
   const title = card.querySelector("h3");
   const artist = card.querySelector(".artist");
+  const cardButtons = card.querySelector(".card-buttons");
   if (image) image.src = artwork(track, 300);
   if (title) title.textContent = displayTitle(track);
   if (artist) artist.textContent = displayArtistLine(track);
   if (audio && track.media?.previewUrl) {
     audio.src = track.media.previewUrl;
     audio.hidden = false;
+    addPreviewLink(cardButtons, track.media.previewUrl);
   }
   if (small) {
     small.textContent = track.media?.previewUrl
@@ -2155,6 +2159,17 @@ function applyTrackMedia(track) {
         ? "Open the track link to play it. Preview loads only when Deezer allows the request."
         : "Cover loaded when available. Preview unavailable for this track.";
   }
+}
+
+function addPreviewLink(container, previewUrl) {
+  if (!container || !previewUrl || container.querySelector(".preview-link")) return;
+  const preview = document.createElement("a");
+  preview.className = "preview-link";
+  preview.href = previewUrl;
+  preview.target = "_blank";
+  preview.rel = "noreferrer";
+  preview.textContent = "Play preview";
+  container.prepend(preview);
 }
 
 function vibeBars(criteria) {
