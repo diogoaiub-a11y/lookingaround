@@ -20,14 +20,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-spotify-v36";
+const APP_VERSION = "vibingecho-spotify-v37";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-spotify-cache-v36";
+const CACHE_KEY = "vibingecho-spotify-cache-v37";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -1706,7 +1706,43 @@ function seedScore(term, track) {
 
 function isLowQualityVariant(track) {
   const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
-  return /\b(live|karaoke|tribute|cover|remix|instrumental|made famous by|sped up|slowed|re-recorded|demos?|outtake|rehearsal)\b/.test(text);
+  return /\b(live|karaoke|tribute|cover|remix|instrumental|made famous by|originally performed|sped up|slowed|speed up|nightcore|re recorded|re recorded|demos?|outtake|rehearsal)\b/.test(text);
+}
+
+function canonicalTrackTitle(track) {
+  return normalize(track.trackName || displayTitle(track))
+    .replace(/\bfeat(?:uring)?\b.*$/g, "")
+    .replace(/\bft\b.*$/g, "")
+    .replace(/\bwith\b.*$/g, "")
+    .replace(/\bfrom\b.*$/g, "")
+    .replace(/\b(live|karaoke|tribute|cover|remix|instrumental|acoustic|sped up|slowed|speed up|nightcore|radio edit|edit|version|remaster(?:ed)?|re recorded|demo|outtake|rehearsal|explicit|clean)\b/g, "")
+    .replace(/\b\d{4}\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function canonicalArtistName(track) {
+  return normalize(track.artistName || displayArtist(track))
+    .replace(/\bfeat(?:uring)?\b.*$/g, "")
+    .replace(/\bft\b.*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function duplicateQualityScore(track) {
+  let score = Number(track.score || 0);
+  if (track.media?.previewUrl) score += 1200000;
+  if (track.media?.coverUrl || track.artworkUrl100) score += 400000;
+  if (track.trackViewUrl || track.media?.mediaUrl) score += 200000;
+  if (isLowQualityVariant(track)) score -= 2500000;
+  if (!usableArtistName(track.artistName)) score -= 800000;
+  return score;
+}
+
+function trackDuplicateKey(track) {
+  const title = canonicalTrackTitle(track);
+  const artist = canonicalArtistName(track);
+  return title && artist ? `${title}:${artist}` : track.trackId;
 }
 
 function isMbid(value) {
@@ -1719,8 +1755,8 @@ function diversifyTracks(tracks, limit) {
   const titles = new Set();
 
   for (const track of tracks) {
-    const artist = normalize(track.artistName);
-    const title = normalize(track.trackName);
+    const artist = canonicalArtistName(track);
+    const title = canonicalTrackTitle(track);
     const artistUses = artistCounts.get(artist) || 0;
     if (artistUses >= 1 || titles.has(title)) continue;
     selected.push(track);
@@ -1730,8 +1766,8 @@ function diversifyTracks(tracks, limit) {
   }
 
   for (const track of tracks) {
-    const artist = normalize(track.artistName);
-    const title = normalize(track.trackName);
+    const artist = canonicalArtistName(track);
+    const title = canonicalTrackTitle(track);
     const artistUses = artistCounts.get(artist) || 0;
     if (artistUses >= 2 || titles.has(title)) continue;
     selected.push(track);
@@ -2360,11 +2396,11 @@ async function mapWithConcurrency(items, limit, worker) {
 function dedupeTracks(tracks) {
   const seen = new Map();
   for (const track of tracks) {
-    const key =
-      track.trackName && track.artistName
-        ? `${normalize(track.trackName)}:${normalize(track.artistName)}`
-        : track.trackId;
-    if (!seen.has(key)) seen.set(key, track);
+    const key = trackDuplicateKey(track);
+    const current = seen.get(key);
+    if (!current || duplicateQualityScore(track) > duplicateQualityScore(current)) {
+      seen.set(key, track);
+    }
   }
   return [...seen.values()];
 }
