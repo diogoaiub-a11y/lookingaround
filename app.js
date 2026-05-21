@@ -22,14 +22,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-vibe-prompt-v44";
+const APP_VERSION = "vibingecho-vibe-prompt-v45";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-vibe-prompt-cache-v44";
+const CACHE_KEY = "vibingecho-vibe-prompt-cache-v45";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -342,6 +342,79 @@ const vibePromptCatalog = [
     queries: ["Ribs Lorde", "Tongue Tied Grouplove", "Kids MGMT", "Young Blood The Naked and Famous", "Some Nights fun.", "We Are Young fun. Janelle Monae"],
   },
 ];
+
+const curatedPromptMedia = {
+  "someone like you adele": {
+    title: "Someone Like You",
+    artist: "Adele",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/dc1ce848d830ecc93521be5a78350364/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/c/f/6/0/cf61cfa01f653ad6b8696a81c6e4d747.mp3?hdnea=exp=1779405011~acl=/api/1/1/c/f/6/0/cf61cfa01f653ad6b8696a81c6e4d747.mp3*~data=user_id=0,application_id=42~hmac=47c7537e92e1750039ca551922236b83d0258425b6193ab89392d5697e3d551f",
+    mediaUrl: "https://www.deezer.com/track/1174603092",
+  },
+  "before you go lewis capaldi": {
+    title: "Before You Go",
+    artist: "Lewis Capaldi",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/327a13284c291832cf01622a414847c9/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/d/a/4/0/da4564a79ddd1d91a002fec8f7be6263.mp3?hdnea=exp=1779405012~acl=/api/1/1/d/a/4/0/da4564a79ddd1d91a002fec8f7be6263.mp3*~data=user_id=0,application_id=42~hmac=b15b55e179b67f5d1261e6b7129729e9a153fbb73f95fa6d2461236cf70c1d3b",
+    mediaUrl: "https://www.deezer.com/track/807205422",
+  },
+  "let her go passenger": {
+    title: "Let Her Go",
+    artist: "Passenger",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/4e3bc8222ca1042be42e8806366d6c4e/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/d/d/8/0/dd8f319d5229834f112e95fcaf08696c.mp3?hdnea=exp=1779405012~acl=/api/1/1/d/d/8/0/dd8f319d5229834f112e95fcaf08696c.mp3*~data=user_id=0,application_id=42~hmac=507bb4417cdae98856b0f51bad4e42c15bfe180a1381cfe40e1921c24ef46824",
+    mediaUrl: "https://www.deezer.com/track/604074552",
+  },
+  "heather conan gray": {
+    title: "Heather",
+    artist: "Conan Gray",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/0a5209aec8e37012eb07eb6ef01fa7e6/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/b/5/c/0/b5cfb18a3e62693393c84e7d30ffc028.mp3?hdnea=exp=1779405013~acl=/api/1/1/b/5/c/0/b5cfb18a3e62693393c84e7d30ffc028.mp3*~data=user_id=0,application_id=42~hmac=55fdac715792fe1810ef975a00d40e1c81ae440bf01014117228769a4b1de59a",
+    mediaUrl: "https://www.deezer.com/track/903771442",
+  },
+  "drivers license olivia rodrigo": {
+    title: "drivers license",
+    artist: "Olivia Rodrigo",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/e68da86fd7976135c2d2d1715afaef7c/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/4/d/5/0/4d54d919da63ae5ed6f2de3e05433317.mp3?hdnea=exp=1779405013~acl=/api/1/1/4/d/5/0/4d54d919da63ae5ed6f2de3e05433317.mp3*~data=user_id=0,application_id=42~hmac=d81bc2dcfc19c8b9711ede97b6affe661d611de4aab622f81d9178bdfcf6681a",
+    mediaUrl: "https://www.deezer.com/track/1378342592",
+  },
+  "all i want kodaline": {
+    title: "All I Want",
+    artist: "Kodaline",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/ae1ef143dd6852df87eefe8a405c091b/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/9/3/e/0/93ef116a1a3ee70ccd1fbb9cbdc45b9d.mp3?hdnea=exp=1779405014~acl=/api/1/1/9/3/e/0/93ef116a1a3ee70ccd1fbb9cbdc45b9d.mp3*~data=user_id=0,application_id=42~hmac=49489855a171204b78a271035bc2a3e6aef2bc90c8421c1a8e440869d8a6a81c",
+    mediaUrl: "https://www.deezer.com/track/927608952",
+  },
+  "when the party s over billie eilish": {
+    title: "when the party's over",
+    artist: "Billie Eilish",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/6630083f454d48eadb6a9b53f035d734/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/2/6/2/0/2622138c94fa96f4d5f06a4db1db733a.mp3?hdnea=exp=1779405014~acl=/api/1/1/2/6/2/0/2622138c94fa96f4d5f06a4db1db733a.mp3*~data=user_id=0,application_id=42~hmac=4465a8437c520d467765611b425e081eca5ab4ce6bf7aea9c574382e5c91b7c5",
+    mediaUrl: "https://www.deezer.com/track/655095962",
+  },
+  "liability lorde": {
+    title: "Liability",
+    artist: "Lorde",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/0c424dbe627530cd06a6fd408baba3f3/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/f/6/4/0/f64334a02e92bd25ebc6af9a6fa5e3a3.mp3?hdnea=exp=1779405014~acl=/api/1/1/f/6/4/0/f64334a02e92bd25ebc6af9a6fa5e3a3.mp3*~data=user_id=0,application_id=42~hmac=4ba3ea8f8e988f254e3547ac5d4de8b80c7f730a6877426149a03844cbafa158",
+    mediaUrl: "https://www.deezer.com/track/371625811",
+  },
+  "space song beach house": {
+    title: "Space Song",
+    artist: "Beach House",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/34cd5be5dbedbf061566eb976614c25d/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/0/4/d/0/04d8af6f7be42510d509531b428dd3fd.mp3?hdnea=exp=1779405015~acl=/api/1/1/0/4/d/0/04d8af6f7be42510d509531b428dd3fd.mp3*~data=user_id=0,application_id=42~hmac=6fcbda0e2a85609a5a3684b1923dabe253cfd063d657cde6a8789398026332a1",
+    mediaUrl: "https://www.deezer.com/track/373082391",
+  },
+  "the night we met lord huron": {
+    title: "The Night We Met",
+    artist: "Lord Huron",
+    coverUrl: "https://cdn-images.dzcdn.net/images/cover/19b14fa5b494e0e74332f7dbf8dab87d/1000x1000-000000-80-0-0.jpg",
+    previewUrl: "https://cdnt-preview.dzcdn.net/api/1/1/d/f/a/0/dfa99f9a7c601cec5cceefc99265835a.mp3?hdnea=exp=1779405016~acl=/api/1/1/d/f/a/0/dfa99f9a7c601cec5cceefc99265835a.mp3*~data=user_id=0,application_id=42~hmac=705c184354776da4c3a90c7434d71bf90d344d2b723e3b09477efd4a324d9382",
+    mediaUrl: "https://www.deezer.com/track/499988832",
+  },
+};
 
 const styleTags = new Set([
   "pop",
@@ -1503,28 +1576,29 @@ async function promptCandidates(profile, referenceSeed) {
 
 function promptFallbackTrack(query, profile, index) {
   const parsed = parsePromptSongQuery(query);
-  const searchUrl = `https://www.deezer.com/search/${encodeURIComponent(query)}`;
+  const curated = curatedPromptMedia[normalize(query)] || {};
+  const searchUrl = curated.mediaUrl || `https://www.deezer.com/search/${encodeURIComponent(query)}`;
   return {
     trackId: `prompt-fallback:${normalize(query)}:${index}`,
-    trackName: parsed.title,
-    artistName: parsed.artist || "Search result",
+    trackName: curated.title || parsed.title,
+    artistName: curated.artist || parsed.artist || "Search result",
     collectionName: "Open in Deezer to play",
     primaryGenreName: "vibe prompt",
     releaseDate: "",
     trackViewUrl: searchUrl,
-    artworkUrl100: "",
+    artworkUrl100: curated.coverUrl || "",
     releaseMbid: "",
     offlineFallback: true,
-    allowPreviewHydration: true,
+    allowPreviewHydration: !curated.previewUrl && !curated.coverUrl,
     tags: profile.tags.slice(0, 16),
     media: {
-      coverUrl: "",
-      previewUrl: "",
+      coverUrl: curated.coverUrl || "",
+      previewUrl: curated.previewUrl || "",
       mediaUrl: searchUrl,
-      title: parsed.title,
-      artist: parsed.artist || "Search result",
-      source: "Fallback search link",
-      skipHydration: false,
+      title: curated.title || parsed.title,
+      artist: curated.artist || parsed.artist || "Search result",
+      source: curated.previewUrl ? "Curated Deezer preview" : "Fallback search link",
+      skipHydration: Boolean(curated.previewUrl || curated.coverUrl),
     },
     score: Math.max(100000 - index * 1000, 1),
   };
