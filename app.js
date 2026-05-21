@@ -22,14 +22,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-vibe-prompt-v43";
+const APP_VERSION = "vibingecho-vibe-prompt-v44";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-vibe-prompt-cache-v43";
+const CACHE_KEY = "vibingecho-vibe-prompt-cache-v44";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -781,6 +781,23 @@ async function enrichMedia(track) {
   return enriched;
 }
 
+async function enrichMediaSafe(track) {
+  try {
+    return await enrichMedia(track);
+  } catch (error) {
+    console.warn(`Preview skipped for "${track.trackName}": ${error.message}`);
+    return {
+      coverUrl: "",
+      previewUrl: "",
+      mediaUrl: track.media?.mediaUrl || track.trackViewUrl,
+      title: track.media?.title || track.trackName,
+      artist: track.media?.artist || track.artistName,
+      source: "Preview unavailable",
+      skipHydration: true,
+    };
+  }
+}
+
 async function fetchMediaWithFallback(track) {
   const artist = usableArtistName(track.artistName) ? track.artistName : "";
   const primary =
@@ -1498,6 +1515,7 @@ function promptFallbackTrack(query, profile, index) {
     artworkUrl100: "",
     releaseMbid: "",
     offlineFallback: true,
+    allowPreviewHydration: true,
     tags: profile.tags.slice(0, 16),
     media: {
       coverUrl: "",
@@ -1506,7 +1524,7 @@ function promptFallbackTrack(query, profile, index) {
       title: parsed.title,
       artist: parsed.artist || "Search result",
       source: "Fallback search link",
-      skipHydration: true,
+      skipHydration: false,
     },
     score: Math.max(100000 - index * 1000, 1),
   };
@@ -2009,10 +2027,13 @@ async function hydrateMediaForTracks(tracks) {
   for (const track of tracks.filter((item) => item.media?.previewUrl || item.media?.coverUrl)) {
     applyTrackMedia(track);
   }
-  const needsMedia = tracks.filter((track) => !track.offlineFallback && !track.media?.skipHydration && !track.media?.previewUrl && !track.media?.coverUrl);
+  const liveMediaLimit = 8;
+  const needsMedia = tracks
+    .filter((track) => (!track.offlineFallback || track.allowPreviewHydration) && !track.media?.skipHydration && !track.media?.previewUrl && !track.media?.coverUrl)
+    .slice(0, liveMediaLimit);
   completed = tracks.length - needsMedia.length;
-  await mapWithConcurrency(needsMedia, 4, async (track) => {
-    track.media = track.media || (await enrichMedia(track));
+  await mapWithConcurrency(needsMedia, 2, async (track) => {
+    track.media = { ...(track.media || {}), ...(await enrichMediaSafe(track)) };
     completed += 1;
     updateProgress(82 + (completed / Math.max(tracks.length, 1)) * 18, "Loading covers and previews");
     applyTrackMedia(track);
@@ -2040,7 +2061,9 @@ function applyTrackMedia(track) {
   if (small) {
     small.textContent = track.media?.previewUrl
       ? "Preview and cover from Deezer. Similarity data from the VibingEcho vibe matcher."
-      : "Cover loaded when available. Preview unavailable for this track.";
+      : track.offlineFallback
+        ? "Open the track link to play it. Preview loads only when Deezer allows the request."
+        : "Cover loaded when available. Preview unavailable for this track.";
   }
 }
 
