@@ -20,14 +20,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-spotify-v37";
+const APP_VERSION = "vibingecho-spotify-v38";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-spotify-cache-v37";
+const CACHE_KEY = "vibingecho-spotify-cache-v38";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -501,6 +501,7 @@ async function deezerCandidates(seed) {
   );
   return dedupeTracks(batches.flat())
     .filter((track) => track.trackId !== seed.trackId)
+    .filter((track) => !sameSongFamily(seed, track))
     .filter((track) => !isLowQualityVariant(track))
     .filter((track) => candidateRelevantToSeed(seed, track))
     .slice(0, FAST_CANDIDATE_LIMIT);
@@ -694,6 +695,8 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
 
   const ranked = enrichedTracks
     .filter((track) => track.trackId !== seed.trackId)
+    .filter((track) => !sameSongFamily(seed, track))
+    .filter((track) => !isLowQualityVariant(track))
     .map((track, index) => {
       const comparison = compareOpenAudio(seedOpen, track.openMusic, index);
       const languageScore = languageMatchScore(seedLanguage, detectTrackLanguage(track));
@@ -1685,40 +1688,65 @@ function suspiciousTag(value) {
 }
 
 function seedScore(term, track) {
-  const query = normalize(term);
-  const title = normalize(track.trackName);
+  const query = canonicalSearchTitle(term);
+  const title = canonicalTrackTitle(track);
   const artist = normalize(track.artistName);
   const text = `${title} ${artist}`;
   let score = 0;
 
-  if (text.includes(query)) score += 120;
-  if (query.includes(title)) score += 80;
-  if (title && query.startsWith(title)) score += 45;
+  if (title === query) score += 3000;
+  if (title && query && (title.startsWith(`${query} `) || query.startsWith(`${title} `))) score += 900;
+  if (text.includes(query)) score += 420;
+  if (query.includes(title)) score += 220;
+  if (title && query.startsWith(title)) score += 120;
 
   const originalArtist = knownOriginals.get(title);
   if (originalArtist && artist.includes(originalArtist)) score += 240;
   if (query.includes(artist)) score += 70;
-  if (isLowQualityVariant(track)) score -= 220;
-  score += Number(track.score || 0) / 2;
+  if (isLowQualityVariant(track)) score -= 900;
+  score += Number(track.score || 0) / 100000;
 
   return score;
 }
 
 function isLowQualityVariant(track) {
   const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
-  return /\b(live|karaoke|tribute|cover|remix|instrumental|made famous by|originally performed|sped up|slowed|speed up|nightcore|re recorded|re recorded|demos?|outtake|rehearsal)\b/.test(text);
+  const artist = normalize(track.artistName);
+  return (
+    /\b(live|karaoke|tribute|cover|covers|covering|remix|instrumental|made famous by|as made famous|originally performed|sped up|slowed|speed up|nightcore|re recorded|demos?|outtake|rehearsal|parody|piano cover|piano version|sleep piano|lullaby|music box|sing along|sound alike|soundalike)\b/.test(text) ||
+    /\b(karaoke|tribute|covering|piano cover|soundalike|lullaby|music box)\b/.test(artist)
+  );
 }
 
 function canonicalTrackTitle(track) {
-  return normalize(track.trackName || displayTitle(track))
+  return canonicalSearchTitle(track.trackName || displayTitle(track));
+}
+
+function canonicalSearchTitle(value) {
+  return normalize(
+    String(value || "")
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/\[[^\]]*\]/g, " ")
+      .replace(/\{[^}]*\}/g, " ")
+      .replace(/\s[-–—:]\s.*/g, " "),
+  )
     .replace(/\bfeat(?:uring)?\b.*$/g, "")
     .replace(/\bft\b.*$/g, "")
     .replace(/\bwith\b.*$/g, "")
     .replace(/\bfrom\b.*$/g, "")
-    .replace(/\b(live|karaoke|tribute|cover|remix|instrumental|acoustic|sped up|slowed|speed up|nightcore|radio edit|edit|version|remaster(?:ed)?|re recorded|demo|outtake|rehearsal|explicit|clean)\b/g, "")
+    .replace(/\b(live|karaoke|tribute|cover|covers|covering|remix|instrumental|acoustic|sped up|slowed|speed up|nightcore|radio edit|edit|version|remaster(?:ed)?|re recorded|demo|outtake|rehearsal|explicit|clean|parody|lullaby|music box|sing along)\b/g, "")
     .replace(/\b\d{4}\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function sameSongFamily(seed, track) {
+  const seedTitle = canonicalTrackTitle(seed);
+  const trackTitle = canonicalTrackTitle(track);
+  if (!seedTitle || !trackTitle) return false;
+  if (seedTitle === trackTitle) return true;
+  if (trackTitle.startsWith(`${seedTitle} `) || seedTitle.startsWith(`${trackTitle} `)) return true;
+  return false;
 }
 
 function canonicalArtistName(track) {
