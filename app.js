@@ -20,19 +20,21 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-spotify-v35";
+const APP_VERSION = "vibingecho-spotify-v36";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-spotify-cache-v35";
+const CACHE_KEY = "vibingecho-spotify-cache-v36";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
 const SPOTIFY_VERIFIER_KEY = "vibingecho-spotify-verifier-v1";
 const SPOTIFY_PENDING_PLAYLIST_KEY = "vibingecho-spotify-pending-playlist-v1";
+const SPOTIFY_PENDING_TRACKS_KEY = "vibingecho-spotify-pending-tracks-v1";
+const SPOTIFY_CLIENT_ID_KEY = "vibingecho-spotify-client-id-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
 const RECOMMENDATION_LIMIT = 36;
 const CATEGORY_LIMIT = 36;
@@ -169,6 +171,78 @@ const knownTrackVibes = [
       "recording:\"Take On Me\" AND artist:\"a-ha\"",
       "recording:\"Midnight City\" AND artist:\"M83\"",
       "recording:\"Sweet Dreams\" AND artist:\"Eurythmics\"",
+    ],
+  },
+];
+
+const knownArtistVibes = [
+  {
+    match: ["justin bieber"],
+    tags: [
+      "glossy",
+      "romantic",
+      "soft vocal",
+      "bright",
+      "clean",
+      "smooth",
+      "warm",
+      "midtempo",
+      "intimate",
+      "bittersweet",
+      "uplifting",
+      "hook",
+    ],
+    queries: [
+      "Stitches Shawn Mendes",
+      "There's Nothing Holdin' Me Back Shawn Mendes",
+      "Attention Charlie Puth",
+      "We Don't Talk Anymore Charlie Puth Selena Gomez",
+      "Stay The Kid LAROI Justin Bieber",
+      "i'm so tired Lauv Troye Sivan",
+      "Eastside benny blanco Halsey Khalid",
+      "Young Dumb & Broke Khalid",
+      "One Call Away Charlie Puth",
+      "Treat You Better Shawn Mendes",
+      "Slow Hands Niall Horan",
+      "Dusk Till Dawn ZAYN Sia",
+      "Pillowtalk ZAYN",
+      "Mercy Shawn Mendes",
+      "Love Me Like You Do Ellie Goulding",
+      "Let Me Down Slowly Alec Benjamin",
+    ],
+  },
+  {
+    match: ["shawn mendes"],
+    tags: ["glossy", "romantic", "soft vocal", "bright", "clean", "smooth", "midtempo", "uplifting", "hook"],
+    queries: [
+      "Love Yourself Justin Bieber",
+      "Attention Charlie Puth",
+      "Slow Hands Niall Horan",
+      "i'm so tired Lauv Troye Sivan",
+      "One Call Away Charlie Puth",
+      "Eastside benny blanco Halsey Khalid",
+    ],
+  },
+  {
+    match: ["charlie puth"],
+    tags: ["glossy", "clean", "smooth", "bright", "soft vocal", "midtempo", "hook", "romantic"],
+    queries: [
+      "Love Yourself Justin Bieber",
+      "Stitches Shawn Mendes",
+      "Slow Hands Niall Horan",
+      "Stay The Kid LAROI Justin Bieber",
+      "i'm so tired Lauv Troye Sivan",
+    ],
+  },
+  {
+    match: ["lauv"],
+    tags: ["glossy", "bittersweet", "soft vocal", "clean", "smooth", "intimate", "midtempo", "romantic"],
+    queries: [
+      "Love Yourself Justin Bieber",
+      "Eastside benny blanco Halsey Khalid",
+      "We Don't Talk Anymore Charlie Puth Selena Gomez",
+      "Let Me Down Slowly Alec Benjamin",
+      "Slow Hands Niall Horan",
     ],
   },
 ];
@@ -1061,6 +1135,15 @@ function knownArtistFromQuery(normalizedTerm) {
 function fallbackSearchQueries(seed) {
   const knownProfile = knownTrackProfile(seed);
   if (knownProfile?.queries?.length) return knownProfile.queries;
+  const artistProfile = knownArtistProfile(seed);
+  if (artistProfile?.queries?.length) {
+    return artistProfile.queries.map((query) => {
+      const parsed = parsePlainSongQuery(query);
+      return parsed.artist
+        ? `recording:"${escapeLucene(parsed.title)}" AND artist:"${escapeLucene(parsed.artist)}"`
+        : `recording:"${escapeLucene(parsed.title)}"`;
+    });
+  }
 
   const tags = [...new Set([...trackMicroVibes(seed), ...(seed.openMusic?.tags || []), ...(seed.tags || [])])]
     .map(normalize)
@@ -1083,10 +1166,17 @@ function fallbackSearchQueries(seed) {
 
 function deezerSearchQueries(seed) {
   const profile = knownTrackProfile(seed);
+  const artistProfile = knownArtistProfile(seed);
   const anchorQueries = (profile?.queries || [])
     .map(parseAnchorQuery)
     .filter(Boolean)
     .map((item) => ({ query: `${item.title} ${item.artist}`, tags: profile.tags || [], specificity: 1 }));
+  const artistAnchorQueries = (artistProfile?.queries || [])
+    .map((query) => ({
+      query,
+      tags: artistProfile.tags || [],
+      specificity: 0.95,
+    }));
   const vibes = [...new Set([...trackMicroVibes(seed), ...(seed.tags || []), ...(seed.openMusic?.tags || [])])]
     .map(cleanGenreLabel)
     .filter(Boolean)
@@ -1101,6 +1191,7 @@ function deezerSearchQueries(seed) {
 
   return [
     ...anchorQueries,
+    ...artistAnchorQueries,
     { query: `${title} ${artist}`, tags: trackMicroVibes(seed), specificity: 1 },
     { query: `${title} ${artist} similar`, tags: trackMicroVibes(seed), specificity: 0.92 },
     { query: `${artist} ${vibes.slice(0, 2).join(" ")}`, tags: vibes.slice(0, 2), specificity: 0.78 },
@@ -1123,6 +1214,11 @@ function trackMicroVibes(track) {
     return [...tags];
   }
 
+  const artistProfile = knownArtistProfile(track);
+  if (artistProfile) {
+    artistProfile.tags.forEach((tag) => tags.add(tag));
+  }
+
   for (const [vibe, vibeTags] of Object.entries(everyNoiseInspiredVibes)) {
     if (vibeTags.some((tag) => text.includes(normalize(tag))) || text.includes(normalize(vibe))) {
       vibeTags.forEach((tag) => tags.add(tag));
@@ -1136,7 +1232,7 @@ function trackMicroVibes(track) {
   if (text.includes("metal")) ["metal", "distortion", "heavy"].forEach((tag) => tags.add(tag));
   if (text.includes("soul") || text.includes("r b")) ["soul", "warm", "vocal"].forEach((tag) => tags.add(tag));
 
-  return [...tags].slice(0, 12);
+  return [...tags].slice(0, 16);
 }
 
 function essenceTags(track) {
@@ -1275,7 +1371,7 @@ function detectTrackLanguage(track) {
   const enWords = ["the", "you", "again", "love", "see", "blue", "night", "heart", "baby", "dream", "never", "forever", "with", "without"];
   const artistHints = [
     [/charlie brown|skank|legiao urbana|cassia eller|jorge ben|caetano|gilberto gil|anavitoria|maneva|natiruts|engenheiros|raimundos|marisa monte|tribalistas|o rappa|capital inicial/, "pt"],
-    [/wiz khalifa|charlie puth|taylor swift|billie eilish|michael jackson|weeknd|queen|nirvana|coldplay|adele|bruno mars|beyonce|rihanna/, "en"],
+    [/wiz khalifa|charlie puth|taylor swift|billie eilish|michael jackson|weeknd|queen|nirvana|coldplay|adele|bruno mars|beyonce|rihanna|justin bieber|shawn mendes|lauv|kid laroi|khalid|niall horan|zayn|ellie goulding|alec benjamin/, "en"],
     [/bad bunny|shakira|rosalia|maluma|karol g|enrique iglesias|rauw alejandro|mana|juanes/, "es"],
   ];
 
@@ -1327,6 +1423,34 @@ function languageName(language) {
 function knownTrackProfile(track) {
   const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName} ${(track.tags || []).join(" ")}`);
   return knownTrackVibes.find((item) => item.match.every((part) => text.includes(normalize(part)))) || null;
+}
+
+function knownArtistProfile(track) {
+  const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName} ${(track.tags || []).join(" ")}`);
+  return knownArtistVibes.find((item) => item.match.every((part) => text.includes(normalize(part)))) || null;
+}
+
+function parsePlainSongQuery(query) {
+  const artistNames = knownArtistVibes.flatMap((profile) => profile.match);
+  const extraArtists = [
+    "the kid laroi",
+    "selena gomez",
+    "troye sivan",
+    "benny blanco",
+    "halsey",
+    "khalid",
+    "niall horan",
+    "zayn",
+    "sia",
+    "ellie goulding",
+    "alec benjamin",
+  ];
+  const artists = [...new Set([...artistNames, ...extraArtists])].sort((a, b) => b.length - a.length);
+  const normalizedQuery = normalize(query);
+  const artist = artists.find((name) => normalizedQuery.includes(normalize(name)));
+  if (!artist) return { title: query.trim(), artist: "" };
+  const title = query.replace(new RegExp(`\\s+${escapeRegExp(artist)}\\s*$`, "i"), "").trim();
+  return { title: title || query.trim(), artist };
 }
 
 function mergeSearchResults(batches) {
@@ -1957,21 +2081,23 @@ function updateProgress(value, label, options = {}) {
 }
 
 async function createSpotifyPlaylistFromResults() {
-  const tracks = [...currentTracks.values()].slice(0, RECOMMENDATION_LIMIT);
+  const tracks = spotifyPlaylistTracks();
   if (!tracks.length) {
     setStatus("Generate recommendations first, then add them to Spotify.");
     return;
   }
 
-  if (!spotifyConfigured()) {
-    setStatus("Spotify setup needed: add your Spotify Client ID in app.js first.");
+  const clientId = spotifyClientId({ ask: true });
+  if (!clientId) {
+    setStatus("Spotify setup needed: paste a Spotify Client ID to connect once.");
     return;
   }
 
   localStorage.setItem(SPOTIFY_PENDING_PLAYLIST_KEY, "1");
+  localStorage.setItem(SPOTIFY_PENDING_TRACKS_KEY, JSON.stringify(tracks));
   const token = await getSpotifyToken();
   if (!token) {
-    await startSpotifyLogin();
+    await startSpotifyLogin(clientId);
     return;
   }
 
@@ -2007,6 +2133,7 @@ async function createSpotifyPlaylistFromResults() {
     }
 
     localStorage.removeItem(SPOTIFY_PENDING_PLAYLIST_KEY);
+    localStorage.removeItem(SPOTIFY_PENDING_TRACKS_KEY);
     updateProgress(100, "Spotify playlist created");
     setStatus(`Spotify playlist created with ${uris.length} songs.`);
     if (playlist.external_urls?.spotify) {
@@ -2019,6 +2146,13 @@ async function createSpotifyPlaylistFromResults() {
   } finally {
     setLoading(false);
   }
+}
+
+function spotifyPlaylistTracks() {
+  const liveTracks = [...currentTracks.values()].slice(0, RECOMMENDATION_LIMIT);
+  if (liveTracks.length) return liveTracks;
+  const savedTracks = readJson(SPOTIFY_PENDING_TRACKS_KEY);
+  return Array.isArray(savedTracks) ? savedTracks.slice(0, RECOMMENDATION_LIMIT) : [];
 }
 
 async function findSpotifyTrackUris(tracks, token) {
@@ -2055,7 +2189,12 @@ async function getSpotifyToken() {
   return null;
 }
 
-async function startSpotifyLogin() {
+async function startSpotifyLogin(clientId = spotifyClientId()) {
+  if (!clientId) {
+    setStatus("Spotify setup needed: paste a Spotify Client ID to connect once.");
+    return;
+  }
+
   const verifier = randomString(64);
   const challenge = await pkceChallenge(verifier);
   const state = randomString(20);
@@ -2063,7 +2202,7 @@ async function startSpotifyLogin() {
 
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: SPOTIFY_CLIENT_ID,
+    client_id: clientId,
     scope: "playlist-modify-private playlist-modify-public",
     code_challenge_method: "S256",
     code_challenge: challenge,
@@ -2088,9 +2227,15 @@ async function handleSpotifyCallback() {
     return;
   }
 
+  const clientId = spotifyClientId();
+  if (!clientId) {
+    setStatus("Spotify login returned, but the Client ID was not saved. Click Add all to Spotify again.");
+    return;
+  }
+
   try {
     const body = new URLSearchParams({
-      client_id: SPOTIFY_CLIENT_ID,
+      client_id: clientId,
       grant_type: "authorization_code",
       code,
       redirect_uri: spotifyRedirectUri(),
@@ -2111,7 +2256,8 @@ async function handleSpotifyCallback() {
     localStorage.removeItem(SPOTIFY_VERIFIER_KEY);
 
     if (localStorage.getItem(SPOTIFY_PENDING_PLAYLIST_KEY) === "1") {
-      setStatus("Spotify connected. Click Add all to Spotify again to create the playlist.");
+      setStatus("Spotify connected. Creating playlist now...");
+      await createSpotifyPlaylistFromResults();
     } else {
       setStatus("Spotify connected.");
     }
@@ -2136,7 +2282,26 @@ async function spotifyFetch(url, token, options = {}) {
 }
 
 function spotifyConfigured() {
-  return SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_ID !== "PASTE_YOUR_SPOTIFY_CLIENT_ID_HERE";
+  return Boolean(spotifyClientId());
+}
+
+function spotifyClientId(options = {}) {
+  const fixed = String(SPOTIFY_CLIENT_ID || "").trim();
+  if (fixed && fixed !== "PASTE_YOUR_SPOTIFY_CLIENT_ID_HERE") return fixed;
+
+  const saved = String(localStorage.getItem(SPOTIFY_CLIENT_ID_KEY) || "").trim();
+  if (saved) return saved;
+
+  if (!options.ask) return "";
+
+  const entered = window.prompt(
+    `Paste your Spotify Client ID once.\n\nRedirect URI to add in Spotify Dashboard:\n${spotifyRedirectUri()}`,
+  );
+  const trimmed = String(entered || "").trim();
+  if (trimmed) {
+    localStorage.setItem(SPOTIFY_CLIENT_ID_KEY, trimmed);
+  }
+  return trimmed;
 }
 
 function spotifyRedirectUri() {
@@ -2237,6 +2402,10 @@ function normalize(value) {
     .replace(/&/g, "and")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function escapeHtml(value) {

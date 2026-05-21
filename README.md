@@ -52,7 +52,9 @@ https://YOUR-SITE.vercel.app/
 ```
 
 3. Copy the app Client ID.
-4. In `app.js`, replace:
+4. Click "Add all to Spotify" on the site and paste the Client ID when asked.
+
+Optional: to avoid asking again on other browsers, in `app.js`, replace:
 
 ```js
 const SPOTIFY_CLIENT_ID = "PASTE_YOUR_SPOTIFY_CLIENT_ID_HERE";
