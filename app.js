@@ -22,14 +22,14 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-vibe-prompt-v41";
+const APP_VERSION = "vibingecho-vibe-prompt-v42";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-vibe-prompt-cache-v41";
+const CACHE_KEY = "vibingecho-vibe-prompt-cache-v42";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const SPOTIFY_TOKEN_KEY = "vibingecho-spotify-token-v1";
@@ -570,9 +570,13 @@ async function runVibePrompt(prompt, referenceTerm = "") {
     let referenceSeed = null;
     if (referenceTerm) {
       updateProgress(18, "Reading optional reference song");
-      referenceSeed = await findSeedTrack(referenceTerm);
-      if (referenceSeed) {
-        referenceSeed.openMusic = referenceSeed.openMusic || quickOpenMusic(referenceSeed);
+      try {
+        referenceSeed = await findSeedTrack(referenceTerm);
+        if (referenceSeed) {
+          referenceSeed.openMusic = referenceSeed.openMusic || quickOpenMusic(referenceSeed);
+        }
+      } catch (error) {
+        console.warn(`Reference song skipped: ${error.message}`);
       }
     }
 
@@ -1497,6 +1501,7 @@ function promptFallbackTrack(query, profile, index) {
     trackViewUrl: searchUrl,
     artworkUrl100: "",
     releaseMbid: "",
+    offlineFallback: true,
     tags: profile.tags.slice(0, 16),
     media: {
       coverUrl: "",
@@ -1505,6 +1510,7 @@ function promptFallbackTrack(query, profile, index) {
       title: parsed.title,
       artist: parsed.artist || "Search result",
       source: "Fallback search link",
+      skipHydration: true,
     },
     score: Math.max(100000 - index * 1000, 1),
   };
@@ -2007,7 +2013,7 @@ async function hydrateMediaForTracks(tracks) {
   for (const track of tracks.filter((item) => item.media?.previewUrl || item.media?.coverUrl)) {
     applyTrackMedia(track);
   }
-  const needsMedia = tracks.filter((track) => !track.media?.previewUrl && !track.media?.coverUrl);
+  const needsMedia = tracks.filter((track) => !track.offlineFallback && !track.media?.skipHydration && !track.media?.previewUrl && !track.media?.coverUrl);
   completed = tracks.length - needsMedia.length;
   await mapWithConcurrency(needsMedia, 4, async (track) => {
     track.media = track.media || (await enrichMedia(track));
@@ -2437,9 +2443,16 @@ async function fetchJson(url) {
     throw new Error(`${url.split("?")[0]} returned ${response.status}`);
   }
   const data = await response.json();
+  if (isMediaUrl(url) && data?.error) {
+    return { data: [], error: String(data.error) };
+  }
   if (data?.error) throw new Error(data.error);
   writeCache(url, data);
   return data;
+}
+
+function isMediaUrl(url) {
+  return new URL(url, location.origin).pathname === MEDIA_API_URL;
 }
 
 function externalFallbackUrl(url) {
