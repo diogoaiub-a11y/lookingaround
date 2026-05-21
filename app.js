@@ -19,19 +19,20 @@ const progressPercent = document.querySelector("#progress-percent");
 const progressBar = document.querySelector("#progress-bar");
 const template = document.querySelector("#track-card-template");
 
-const APP_VERSION = "vibingecho-deezer-main-v32";
+const APP_VERSION = "vibingecho-essence-vibes-v34";
 const OPEN_SEARCH_API_URL = "/api/open-search";
 const SIMILARBRAINZ_API_URL = "/api/similarbrainz";
 const LISTENBRAINZ_RECORDINGS_API_URL = "/api/listenbrainz-recordings";
 const MUSICBRAINZ_API_URL = "/api/musicbrainz";
 const ACOUSTICBRAINZ_API_URL = "/api/acousticbrainz";
 const MEDIA_API_URL = "/api/deezer";
-const CACHE_KEY = "vibingecho-deezer-cache-v32";
+const CACHE_KEY = "vibingecho-essence-cache-v34";
 const HISTORY_KEY = "vibingecho-history-v1";
 const FAVORITES_KEY = "vibingecho-favorites-v1";
 const CACHE_TTL = 1000 * 60 * 60 * 24;
 const RECOMMENDATION_LIMIT = 36;
 const CATEGORY_LIMIT = 36;
+const FAST_CANDIDATE_LIMIT = 48;
 
 const currentTracks = new Map();
 
@@ -180,6 +181,37 @@ const everyNoiseInspiredVibes = {
   "organic-acoustic": ["acoustic", "folk", "organic", "warm", "soft", "intimate"],
 };
 
+const styleTags = new Set([
+  "pop",
+  "rock",
+  "funk",
+  "dance",
+  "r&b",
+  "rb",
+  "soul",
+  "rap",
+  "hip hop",
+  "hip-hop",
+  "trap",
+  "latin",
+  "reggaeton",
+  "mpb",
+  "jazz",
+  "blues",
+  "folk",
+  "metal",
+  "punk",
+  "indie",
+  "alternative",
+  "electronic",
+  "house",
+  "disco",
+  "synthpop",
+  "new wave",
+  "grunge",
+  "catalog track",
+]);
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const term = queryInput.value.trim();
@@ -274,14 +306,14 @@ async function runFromSeed(seed) {
   results.innerHTML = "";
 
   try {
-    seed.openMusic = seed.openMusic || (await enrichOpenMusic(seed));
+    seed.openMusic = seed.openMusic || quickOpenMusic(seed);
     renderSeed(seed);
     hydrateSeedMedia(seed);
-    updateProgress(38, "Collecting similar tracks");
-    setStatus("Finding catalog matches, then comparing vibe criteria...");
+    updateProgress(42, "Collecting catalog matches");
+    setStatus("Finding catalog matches and ranking vibes...");
 
     const candidates = await collectCandidates(seed);
-    updateProgress(58, "Comparing sound criteria");
+    updateProgress(66, "Ranking vibe matches");
     const recommendations = await rankTracks(seed, candidates, moodInput.value, similarityValue());
 
     if (!recommendations.length) {
@@ -294,7 +326,7 @@ async function runFromSeed(seed) {
     renderResults(recommendations);
     const acousticCount = recommendations.filter((track) => hasAcousticData(track.openMusic)).length;
     setStatus(
-      `${APP_VERSION}: selected ${recommendations.length} Deezer catalog matches with ${acousticCount} optional AcousticBrainz profiles.`,
+      `${APP_VERSION}: selected ${recommendations.length} Deezer catalog matches. Previews keep loading after results appear.`,
     );
   } catch (error) {
     console.error(error);
@@ -317,9 +349,9 @@ async function runCategory(category) {
     const batches = await Promise.all(data.terms.map((term) => searchDeezerTracks(term, 30)));
     const candidates = dedupeTracks(batches.flat());
     updateProgress(52, "Reading catalog data");
-    const enriched = await mapWithConcurrency(candidates.slice(0, 60), 8, async (track) => ({
+    const enriched = candidates.slice(0, 60).map((track) => ({
       ...track,
-      openMusic: await enrichOpenMusic(track),
+      openMusic: track.openMusic || quickOpenMusic(track),
     }));
     updateProgress(74, "Ranking category matches");
     const recommendations = rankCategoryTracks(category, enriched);
@@ -348,36 +380,11 @@ async function findSeedTrack(term) {
 
 async function collectCandidates(seed) {
   const deezerTracksPromise = deezerCandidates(seed);
-  const mbid = seed.openMusic?.mbid || seed.trackId;
-  const similar = isMbid(mbid) ? await fetchJsonSafe(`${SIMILARBRAINZ_API_URL}?mbid=${encodeURIComponent(mbid)}`) : null;
-  const mbids = extractSimilarMbids(similar).filter((id) => id && id !== mbid).slice(0, 50);
-  const fallbackTracksPromise = fallbackCandidates(seed);
-
-  if (!mbids.length) {
-    const deezerTracks = await deezerTracksPromise;
-    const fallbackTracks = await fallbackTracksPromise;
-    return dedupeTracks([...deezerTracks, ...fallbackTracks]);
-  }
-
-  const metadata = await fetchJsonSafe(
-    `${LISTENBRAINZ_RECORDINGS_API_URL}?mbids=${encodeURIComponent(mbids.join(","))}`,
-  );
-  const metadataTracks = normalizeListenBrainzBatch(metadata);
-  const known = new Map(metadataTracks.map((track) => [track.trackId, track]));
-
-  for (const item of flattenSimilarItems(similar)) {
-    const id = item.recording_mbid || item.mbid || item.recording?.recording_mbid || item.recording?.mbid;
-    if (!id || known.has(id)) continue;
-    const fallback = normalizeSimilarItem(item);
-    if (fallback) known.set(id, fallback);
-  }
-
-  const listenBrainzTracks = dedupeTracks([...known.values()]);
   const deezerTracks = await deezerTracksPromise;
-  if (deezerTracks.length >= RECOMMENDATION_LIMIT) return deezerTracks;
+  if (deezerTracks.length >= Math.min(RECOMMENDATION_LIMIT, 24)) return deezerTracks;
 
-  const fallbackTracks = await fallbackTracksPromise;
-  return dedupeTracks([...deezerTracks, ...listenBrainzTracks, ...fallbackTracks]);
+  const fallbackTracks = await fallbackCandidates(seed);
+  return dedupeTracks([...deezerTracks, ...fallbackTracks]);
 }
 
 async function searchDeezerTracks(query, limit = 24) {
@@ -392,16 +399,16 @@ async function searchDeezerTracks(query, limit = 24) {
 }
 
 async function deezerCandidates(seed) {
-  const queries = deezerSearchQueries(seed);
-  const seedVibes = [...new Set([...trackMicroVibes(seed), ...(seed.tags || []), ...(seed.openMusic?.tags || [])])].filter(Boolean);
+  const queries = deezerSearchQueries(seed).slice(0, 6);
+  const seedVibes = essenceTags(seed);
   const batches = await Promise.all(
     queries.map(async (queryData) => {
       const query = queryData.query || queryData;
-      const queryVibes = [...everyNoiseQueryTags(query), ...(queryData.tags || []), cleanGenreLabel(query)].filter(Boolean);
-      const tracks = await searchDeezerTracks(query, 28);
+      const queryVibes = essenceTags({ trackName: query, artistName: seed.artistName, collectionName: "", tags: queryData.tags || [] });
+      const tracks = await searchDeezerTracks(query, 18);
       return tracks.map((track) => ({
         ...track,
-        tags: [...new Set([...(track.tags || []), ...queryVibes, ...seedVibes, languageTag(seed)])].filter(Boolean).slice(0, 24),
+        tags: [...new Set([...essenceTags(track), ...queryVibes, ...seedVibes, languageTag(seed)])].filter(Boolean).slice(0, 24),
         candidateQuery: query,
         candidateSpecificity: queryData.specificity || querySpecificity(query),
         seedLanguage: detectTrackLanguage(seed),
@@ -412,7 +419,7 @@ async function deezerCandidates(seed) {
     .filter((track) => track.trackId !== seed.trackId)
     .filter((track) => !isLowQualityVariant(track))
     .filter((track) => candidateRelevantToSeed(seed, track))
-    .slice(0, 90);
+    .slice(0, FAST_CANDIDATE_LIMIT);
 }
 
 async function searchOpenRecordings(term, limit = 10) {
@@ -489,6 +496,18 @@ async function enrichOpenMusic(track) {
 
   writeCache(cacheKey, enriched);
   return enriched;
+}
+
+function quickOpenMusic(track) {
+  return {
+    mbid: isMbid(track.trackId) ? track.trackId : null,
+    musicBrainz: null,
+    acousticBrainz: null,
+    tags: essenceTags(track)
+      .filter(Boolean)
+      .slice(0, 24),
+    sources: ["Deezer"],
+  };
 }
 
 async function enrichMedia(track) {
@@ -580,20 +599,24 @@ function normalizeDeezerTrack(item) {
 }
 
 async function rankTracks(seed, tracks, mood, similarity = 0.72) {
-  const seedOpen = seed.openMusic || (await enrichOpenMusic(seed));
+  const seedOpen = seed.openMusic || quickOpenMusic(seed);
   const selectedMood = mood === "auto" ? null : mood;
-  const enrichedTracks = await mapWithConcurrency(tracks.slice(0, 80), 8, async (track) => ({
+  const enrichedTracks = tracks.slice(0, FAST_CANDIDATE_LIMIT).map((track) => ({
     ...track,
-    openMusic: track.openMusic || (await enrichOpenMusic(track)),
+    openMusic: track.openMusic || quickOpenMusic(track),
   }));
   const seedLanguage = detectTrackLanguage(seed);
+  const seedEssence = essenceTags(seed);
 
   const ranked = enrichedTracks
     .filter((track) => track.trackId !== seed.trackId)
     .map((track, index) => {
       const comparison = compareOpenAudio(seedOpen, track.openMusic, index);
       const languageScore = languageMatchScore(seedLanguage, detectTrackLanguage(track));
-      const score = applyStrictness(clamp(comparison.score + languageScore, 0, 0.98), similarity, comparison.acousticLevel);
+      const candidateEssence = essenceTags(track);
+      const sharedEssence = sharedEssenceCount(seedEssence, candidateEssence);
+      const essenceScore = essenceOverlapScore(seedEssence, candidateEssence);
+      const score = applyStrictness(clamp(comparison.score * 0.72 + essenceScore * 0.26 + languageScore, 0, 0.98), similarity, comparison.acousticLevel);
       const tags = track.openMusic?.tags || [];
       const moodValue = cleanVibeLabel(selectedMood || inferMoodFromOpenData(track.openMusic) || comparison.mood);
 
@@ -605,6 +628,7 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
         tags,
         reasons: comparison.criteria.slice(0, 3).map((item) => item.label),
         criterionMatches: [
+          essenceCriterion(seedEssence, candidateEssence),
           languageCriterion(seedLanguage, track),
           ...comparison.criteria,
         ].filter(Boolean),
@@ -614,8 +638,9 @@ async function rankTracks(seed, tracks, mood, similarity = 0.72) {
           texture: comparison.texture || "open",
         },
         analysis: criteriaAnalysis(comparison),
-        essencePassed: score >= passThreshold(similarity, comparison.acousticLevel),
+        essencePassed: sharedEssence >= requiredEssenceMatches(seedEssence) && score >= passThreshold(similarity, comparison.acousticLevel),
         acousticLevel: comparison.acousticLevel,
+        sharedEssence,
       };
     })
     .filter((track) => track.essencePassed)
@@ -679,7 +704,7 @@ function compareOpenAudio(seedOpen, trackOpen, index = 0) {
     ? weightedAverage(available.map((item) => [item.score, item.weight]))
     : 0;
   const tagScore = vibeTagSimilarity(seedOpen?.tags || [], trackOpen?.tags || []);
-  const listenBrainzTrust = clamp(0.72 - index * 0.006, 0.38, 0.72);
+  const listenBrainzTrust = clamp(0.52 - index * 0.006, 0.28, 0.52);
   const rawScore =
     acousticLevel === "full"
       ? dataScore * 0.78 + tagScore * 0.12 + listenBrainzTrust * 0.1
@@ -1104,6 +1129,99 @@ function trackMicroVibes(track) {
   return [...tags].slice(0, 12);
 }
 
+function essenceTags(track) {
+  const raw = [
+    ...(track.tags || []),
+    ...(track.openMusic?.tags || []),
+    ...trackMicroVibes(track),
+    ...inferEssenceFromText(track),
+    languageTag(track),
+  ];
+
+  return [...new Set(raw.map(normalizeEssenceTag).filter(Boolean).filter((tag) => !isStyleTag(tag)))]
+    .slice(0, 28);
+}
+
+function inferEssenceFromText(track) {
+  const text = normalize(`${track.trackName} ${track.artistName} ${track.collectionName}`);
+  const tags = new Set();
+  const rules = [
+    [["ceu", "azul", "sun", "summer", "good", "happy", "sweet", "light"], ["bright", "open-air", "uplifting"]],
+    [["again", "saudade", "remember", "memories", "yesterday", "home"], ["nostalgic", "bittersweet"]],
+    [["cry", "tears", "sad", "alone", "lonely", "sem voce", "without"], ["melancholic", "lonely"]],
+    [["night", "dark", "shadow", "bad", "black"], ["dark", "tense"]],
+    [["love", "amor", "heart", "baby", "voce"], ["romantic", "intimate"]],
+    [["fire", "danger", "fight", "wild", "power"], ["tense", "driving", "confident"]],
+    [["dream", "moon", "space"], ["dreamy", "spacious"]],
+    [["dance", "move", "groove"], ["groovy", "body-led"]],
+    [["acoustic", "unplugged"], ["organic", "warm", "intimate"]],
+  ];
+
+  for (const [needles, values] of rules) {
+    if (needles.some((needle) => text.includes(normalize(needle)))) {
+      values.forEach((value) => tags.add(value));
+    }
+  }
+
+  return [...tags];
+}
+
+function normalizeEssenceTag(value) {
+  const tag = normalize(value).replace(/^language /, "language:");
+  const aliases = new Map([
+    ["dance rock", "driving"],
+    ["guitar", "textured"],
+    ["drums", "percussive"],
+    ["bass", "bass-heavy"],
+    ["sub bass", "bass-heavy"],
+    ["808", "bass-heavy"],
+    ["bright synth", "bright"],
+    ["minor", "melancholic"],
+    ["explosive chorus", "explosive"],
+    ["build up", "build-up"],
+    ["raspy vocal", "rough vocal"],
+    ["whisper vocal", "soft vocal"],
+    ["reverb", "spacious"],
+    ["polished", "clean"],
+    ["raw", "rough"],
+    ["distortion", "rough"],
+    ["syncopated", "groovy"],
+  ]);
+  return aliases.get(tag) || tag;
+}
+
+function isStyleTag(value) {
+  const tag = normalize(value);
+  return styleTags.has(tag) || /^(pop|rock|funk|soul|jazz|blues|folk|metal|punk|trap|rap|latin|reggaeton|mpb|indie|alternative|electronic|house|disco|grunge|synthpop|new wave)$/.test(tag);
+}
+
+function sharedEssenceCount(seedTags, candidateTags) {
+  const candidate = new Set(candidateTags);
+  return seedTags.filter((tag) => candidate.has(tag)).length;
+}
+
+function essenceOverlapScore(seedTags, candidateTags) {
+  if (!seedTags.length || !candidateTags.length) return 0;
+  return sharedEssenceCount(seedTags, candidateTags) / Math.min(seedTags.length, 8);
+}
+
+function requiredEssenceMatches(seedTags) {
+  if (seedTags.length >= 8) return 3;
+  if (seedTags.length >= 4) return 2;
+  return 1;
+}
+
+function essenceCriterion(seedTags, candidateTags) {
+  const shared = seedTags.filter((tag) => candidateTags.includes(tag));
+  return criterion(
+    "Shared essence vibes",
+    clamp(shared.length / Math.max(requiredEssenceMatches(seedTags), 1), 0, 1),
+    true,
+    shared.slice(0, 5).join(", ") || "few shared vibes",
+    1.35,
+  );
+}
+
 function everyNoiseQueryTags(query) {
   const text = normalize(query);
   const tags = new Set();
@@ -1120,17 +1238,14 @@ function candidateRelevantToSeed(seed, track) {
   const trackText = normalize(`${track.trackName} ${track.artistName} ${track.collectionName} ${(track.tags || []).join(" ")}`);
   const seedArtist = normalize(seed.artistName);
   const trackArtist = normalize(track.artistName);
-  const tagScore = vibeTagSimilarity(
-    [...trackMicroVibes(seed), ...(seed.tags || []), ...(seed.openMusic?.tags || [])],
-    [...trackMicroVibes(track), ...(track.tags || [])],
-  );
+  const tagScore = vibeTagSimilarity(essenceTags(seed), essenceTags(track));
   const textScore = textSimilarity(seedText, trackText);
   const queryScore = textSimilarity(track.candidateQuery || "", trackText);
   const sameArtist = seedArtist && trackArtist && seedArtist === trackArtist;
   const specificity = track.candidateSpecificity || 0;
   const languageScore = languageMatchScore(detectTrackLanguage(seed), detectTrackLanguage(track));
 
-  return sameArtist || languageScore >= 0.08 || tagScore >= 0.18 || textScore >= 0.1 || (specificity >= 0.75 && queryScore >= 0.12);
+  return sameArtist || tagScore >= 0.22 || (languageScore >= 0.08 && tagScore >= 0.14) || textScore >= 0.1 || (specificity >= 0.75 && queryScore >= 0.12);
 }
 
 function querySpecificity(query) {
@@ -1301,33 +1416,42 @@ async function hydrateSeedMedia(track) {
 async function hydrateMediaForTracks(tracks) {
   let completed = 0;
   updateProgress(82, "Loading covers and previews");
-  await mapWithConcurrency(tracks, 8, async (track) => {
+  for (const track of tracks.filter((item) => item.media?.previewUrl || item.media?.coverUrl)) {
+    applyTrackMedia(track);
+  }
+  const needsMedia = tracks.filter((track) => !track.media?.previewUrl && !track.media?.coverUrl);
+  completed = tracks.length - needsMedia.length;
+  await mapWithConcurrency(needsMedia, 4, async (track) => {
     track.media = track.media || (await enrichMedia(track));
     completed += 1;
     updateProgress(82 + (completed / Math.max(tracks.length, 1)) * 18, "Loading covers and previews");
-    const card = results.querySelector(`[data-track-id="${cssEscape(track.trackId)}"]`);
-    if (!card) return;
-
-    const image = card.querySelector("img.cover");
-    const audio = card.querySelector("audio");
-    const small = card.querySelector("small");
-    const title = card.querySelector("h3");
-    const artist = card.querySelector(".artist");
-    if (image) image.src = artwork(track, 300);
-    if (title) title.textContent = displayTitle(track);
-    if (artist) artist.textContent = displayArtistLine(track);
-    if (audio && track.media?.previewUrl) {
-      audio.src = track.media.previewUrl;
-      audio.hidden = false;
-    }
-    if (small) {
-      small.textContent = track.media?.previewUrl
-        ? "Preview and cover from Deezer. Similarity data from MusicBrainz, ListenBrainz, and AcousticBrainz."
-      : "Cover loaded when available. Preview unavailable for this track.";
-    }
+    applyTrackMedia(track);
   });
   updateProgress(100, "Done");
   window.setTimeout(() => updateProgress(0, "Ready", { hidden: true }), 900);
+}
+
+function applyTrackMedia(track) {
+  const card = results.querySelector(`[data-track-id="${cssEscape(track.trackId)}"]`);
+  if (!card) return;
+
+  const image = card.querySelector("img.cover");
+  const audio = card.querySelector("audio");
+  const small = card.querySelector("small");
+  const title = card.querySelector("h3");
+  const artist = card.querySelector(".artist");
+  if (image) image.src = artwork(track, 300);
+  if (title) title.textContent = displayTitle(track);
+  if (artist) artist.textContent = displayArtistLine(track);
+  if (audio && track.media?.previewUrl) {
+    audio.src = track.media.previewUrl;
+    audio.hidden = false;
+  }
+  if (small) {
+    small.textContent = track.media?.previewUrl
+      ? "Preview and cover from Deezer. Similarity data from the VibingEcho vibe matcher."
+      : "Cover loaded when available. Preview unavailable for this track.";
+  }
 }
 
 function vibeBars(criteria) {
