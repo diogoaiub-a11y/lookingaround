@@ -1,76 +1,18 @@
-# VibingEcho
+# Looking around
 
-Static website for recommending similar songs with the Deezer catalog plus optional open-data analysis.
-It does not use iTunes anymore.
+Site estático com um chat de apoio para ajudar pessoas a perceberem sinais de sofrimento emocional em homens e pensarem no próximo passo com cuidado.
 
-## Data sources
+O site não substitui psicólogo, médico ou emergência. Em risco imediato no Brasil, procure CVV 188, SAMU 192 ou emergência local.
 
-- Deezer is the main catalog for real released songs, artists, cover images, and
-  30-second preview clips.
-- MusicBrainz, ListenBrainz, and AcousticBrainz are optional enrichment sources
-  when open-data analysis is available.
-- Lyrics are not used.
-- Artist, album, era, and popularity are not used as similarity criteria.
+## Arquivos principais
 
-## Matching criteria
+- `index.html`
+- `styles.css`
+- `app.js`
 
-VibingEcho compares open audio descriptors when available:
+## Deploy na Vercel
 
-- Tonality / harmony
-- BPM and rhythm
-- Drum / percussion pattern
-- Timbre
-- Texture / production
-- Structure
-- Melody
-- Emotional energy
-- Dynamics
-- Vocal style
-- Dominant frequency range
-- Repetitive motifs
-
-If AcousticBrainz has no audio profile for a recording, the visible score is capped
-and the site falls back to ListenBrainz neighbors plus MusicBrainz tags.
-
-## Deploy to Vercel
-
-1. Push these files to GitHub.
-2. Import the repository in Vercel.
-3. Framework preset: `Other`.
-4. Build command: leave empty.
-5. Output directory: leave empty or use `.`.
-
-## Spotify playlist export
-
-The "Add all to Spotify" button uses Spotify Authorization Code with PKCE.
-
-1. Create an app at https://developer.spotify.com/dashboard.
-2. Add this redirect URI:
-
-```text
-https://YOUR-SITE.vercel.app/
-```
-
-3. Copy the app Client ID.
-4. Click "Add all to Spotify" on the site and paste the Client ID when asked.
-
-Optional: to avoid asking again on other browsers, in `app.js`, replace:
-
-```js
-const SPOTIFY_CLIENT_ID = "PASTE_YOUR_SPOTIFY_CLIENT_ID_HERE";
-```
-
-with your Client ID.
-
-## Run locally
-
-```bash
-cd /Users/diogoaiub/Documents/Codex/2026-05-16/estou-fazendo-um-site-ja-tenho
-python3 -m http.server 8080
-```
-
-Then open:
-
-```text
-http://localhost:8080
-```
+1. Envie esses arquivos para o GitHub.
+2. Entre no projeto da Vercel.
+3. Clique em redeploy ou aguarde o deploy automático.
+4. Abra o site e atualize a página com cache limpo.
