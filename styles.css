@@ -83,10 +83,11 @@ p {
 h1 {
   max-width: 980px;
   margin-bottom: 22px;
-  font-family: "Instrument Serif", Georgia, serif;
+  font-family: "Archivo Black", Impact, sans-serif;
   font-size: clamp(3.2rem, 9vw, 8.4rem);
-  font-weight: 400;
-  line-height: 0.88;
+  font-weight: 900;
+  line-height: 0.9;
+  text-transform: uppercase;
 }
 
 .hero-copy p:not(.eyebrow) {
@@ -111,11 +112,12 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
-  font-family: "Instrument Serif", Georgia, serif;
+  font-family: "Archivo Black", Impact, sans-serif;
   font-size: clamp(1.28rem, 3vw, 2.4rem);
-  font-style: italic;
-  font-weight: 400;
-  line-height: 1.08;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.02;
+  text-transform: uppercase;
 }
 
 .question-stack p:nth-child(even) {
