@@ -7,30 +7,33 @@
       name="description"
       content="Um chat de apoio para reconhecer sinais de sofrimento emocional em homens e agir com cuidado."
     />
-    <title>VibingEcho | Apoio silencioso</title>
+    <title>Looking around | Apoio silencioso</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="app-shell">
-      <section class="intro-panel" aria-label="Contexto do site">
-        <p class="eyebrow">VibingEcho</p>
-        <h1>Quando ele não consegue dizer que está mal.</h1>
-        <p>
-          Um chat-guia para ajudar você a perceber sinais, conversar com cuidado
-          e decidir o próximo passo quando um homem parece triste, isolado ou no limite.
-        </p>
-
-        <div class="urgent-box">
-          <strong>Risco imediato?</strong>
-          <span>
-            Se houver ameaça de suicídio, despedidas, acesso a meios perigosos ou
-            risco de agressão, não tente resolver sozinho. No Brasil: CVV 188,
-            SAMU 192 ou emergência local.
-          </span>
+      <section class="hero-panel" aria-label="Perguntas sobre saúde mental masculina">
+        <div class="hero-copy">
+          <p class="eyebrow">Looking around</p>
+          <h1>Nem todo homem triste parece triste.</h1>
+          <p>
+            Algumas pessoas somem, ficam frias, trabalham demais, explodem em silêncio
+            ou dizem que está tudo bem quando não está.
+          </p>
         </div>
+
+        <div class="question-stack" aria-label="Questionamentos">
+          <p>Quando ele parou de falar sobre o que sente?</p>
+          <p>Quando o cansaço virou resposta para tudo?</p>
+          <p>Quando a irritação começou a parecer tristeza disfarçada?</p>
+          <p>Quando “estou bem” deixou de convencer?</p>
+          <p>E se o silêncio for o pedido de ajuda que ele consegue fazer?</p>
+        </div>
+
+        <a class="chat-cta" href="#chat">Conversar com o chat</a>
       </section>
 
-      <section class="chat-shell" aria-label="Chat de apoio">
+      <section id="chat" class="chat-shell" aria-label="Chat de apoio">
         <div class="chat-header">
           <div>
             <p class="eyebrow">Assistente de situação</p>
@@ -67,6 +70,10 @@
       </section>
 
       <section class="guide-grid" aria-label="Guias rápidos">
+        <article class="urgent-card">
+          <h3>Risco imediato?</h3>
+          <p>Se houver ameaça de suicídio, despedidas, acesso a meios perigosos ou risco de agressão, não tente resolver sozinho. No Brasil: CVV 188, SAMU 192 ou emergência local.</p>
+        </article>
         <article>
           <h3>Sinais que costumam passar batido</h3>
           <p>Isolamento, piadas sobre sumir, irritação constante, sono alterado, abuso de álcool, sumiço de hobbies e frases como “tanto faz”.</p>
